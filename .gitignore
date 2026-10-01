@@ -1,0 +1,5 @@
+node_modules/
+.DS_Store
+*.log
+node-v22.14.0-linux-x64.tar.xz
+node-v22.14.0-linux-x64/

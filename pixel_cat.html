@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PIXEL CAT // 像素小猫</title>
+<style>
+  :root{
+    --bg:#04070a;
+    --ink:#5dfc9b;
+    --ink-dim:#1c7d4c;
+    --ink-dark:#0b2b1c;
+    --amber:#ffd166;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;}
+  body{
+    margin:0;
+    min-height:100vh;
+    display:grid;
+    place-items:center;
+    background:radial-gradient(ellipse at 50% 38%, #0b1f17 0%, #050b09 55%, #000 100%);
+    color:var(--ink);
+    font-family:"Courier New",Courier,"Lucida Console",monospace;
+    overflow:hidden;
+  }
+  /* 背景透视网格 */
+  body::before{
+    content:"";
+    position:fixed;
+    inset:-12%;
+    background-image:
+      linear-gradient(rgba(93,252,155,.05) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(93,252,155,.05) 1px, transparent 1px);
+    background-size:32px 32px;
+    transform:perspective(600px) rotateX(52deg) scale(1.6);
+    transform-origin:50% 100%;
+    opacity:.5;
+    pointer-events:none;
+  }
+  .crt{
+    position:relative;
+    width:min(94vw, 660px);
+    border:2px solid var(--ink-dim);
+    border-radius:12px;
+    background:linear-gradient(180deg,#07130e,#030806);
+    box-shadow:
+      0 0 0 3px #000,
+      0 0 36px rgba(93,252,155,.22),
+      0 0 90px rgba(93,252,155,.10),
+      inset 0 0 70px rgba(93,252,155,.06);
+    overflow:hidden;
+  }
+  .titlebar{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    padding:8px 12px;
+    border-bottom:1px solid var(--ink-dark);
+    background:linear-gradient(180deg,#0a1c14,#06120d);
+    font-size:12px;
+    letter-spacing:1px;
+    color:var(--ink-dim);
+    text-transform:uppercase;
+  }
+  .led{width:9px;height:9px;border-radius:50%;background:currentColor;box-shadow:0 0 8px currentColor;}
+  .led.r{color:#ff5f56;}
+  .led.y{color:#ffbd2e;}
+  .led.g{color:#27c93f;}
+  .titlebar .label{margin-left:6px;}
+  .screen{
+    position:relative;
+    padding:18px;
+    display:grid;
+    place-items:center;
+  }
+  canvas{
+    display:block;
+    width:min(76vw, 528px);
+    height:auto;
+    aspect-ratio:1/1;
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    background:#04070a;
+    border-radius:4px;
+    box-shadow:inset 0 0 0 1px rgba(93,252,155,.18);
+  }
+  /* CRT 扫描线 */
+  .scanlines{
+    position:absolute;
+    inset:0;
+    pointer-events:none;
+    background:repeating-linear-gradient(
+      to bottom,
+      rgba(0,0,0,.22) 0px,
+      rgba(0,0,0,.22) 1px,
+      rgba(0,0,0,0) 2px,
+      rgba(0,0,0,0) 4px);
+    mix-blend-mode:multiply;
+  }
+  .hud{
+    padding:12px 16px 16px;
+    border-top:1px solid var(--ink-dark);
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+    align-items:center;
+    justify-content:space-between;
+    font-size:13px;
+  }
+  .line{margin:0;letter-spacing:.5px;}
+  .line .dim{color:var(--ink-dim);}
+  .cursor{
+    display:inline-block;
+    width:.62em;height:1em;
+    background:var(--ink);
+    vertical-align:-.15em;
+    animation:blink 1s steps(1,end) infinite;
+  }
+  @keyframes blink{50%{opacity:0;}}
+  .buttons{display:flex;gap:8px;}
+  .buttons button{
+    font:inherit;font-size:12px;letter-spacing:2px;
+    color:var(--ink);background:transparent;
+    border:1px solid var(--ink-dim);
+    padding:6px 12px;border-radius:3px;cursor:pointer;
+    transition:background .15s, box-shadow .15s, color .15s;
+  }
+  .buttons button:hover{background:rgba(93,252,155,.12);box-shadow:0 0 12px rgba(93,252,155,.3);}
+  .buttons button[aria-pressed="true"]{background:var(--ink);color:#04120b;box-shadow:0 0 18px rgba(93,252,155,.55);}
+</style>
+</head>
+<body>
+  <main class="crt">
+    <div class="titlebar">
+      <span class="led r"></span><span class="led y"></span><span class="led g"></span>
+      <span class="label">pixel_cat.exe — 32x32 sprite engine</span>
+    </div>
+
+    <div class="screen">
+      <canvas id="stage" width="288" height="288" aria-label="像素小猫动画"></canvas>
+      <div class="scanlines"></div>
+    </div>
+
+    <div class="hud">
+      <p class="line">&gt; render <span id="modeLabel">DANCE</span> <span class="dim">// frame-by-frame</span> <span class="cursor"></span></p>
+      <div class="buttons">
+        <button type="button" data-mode="auto">AUTO</button>
+        <button type="button" data-mode="dance">DANCE</button>
+        <button type="button" data-mode="cry">CRY</button>
+      </div>
+    </div>
+  </main>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ==========================================================
+     1. 画布：32 x 32 的“逻辑像素”网格，每格 = 9 个屏幕像素
+     ========================================================== */
+  var GW = 32;
+  var GH = 32;
+  var S  = 9;
+
+  var canvas = document.getElementById('stage');
+  var ctx = canvas.getContext('2d');
+  canvas.width  = GW * S;
+  canvas.height = GH * S;
+  ctx.imageSmoothingEnabled = false;
+
+  /* ==========================================================
+     2. 调色板：单个字符 -> 一个颜色
+        o 描边 / b 橘色身体 / p 粉色 / w 白毛 / e 眼睛
+        h 眼睛高光 / d 眼泪亮 / D 眼泪暗
+     ========================================================== */
+  var PAL = {
+    o: '#1b1220',
+    b: '#f2a25a',
+    p: '#ff9ab0',
+    w: '#fff4e2',
+    e: '#141019',
+    h: '#ffffff',
+    d: '#8fe9ff',
+    D: '#2f9fd8'
+  };
+
+  /* ==========================================================
+     3. 二维数组定义像素小猫：16 宽 x 19 高
+        每一个字符就是一个像素，'.' 表示透明
+     ========================================================== */
+  var CAT = [
+    '...oooooooooo...',
+    '...obbbbbbbbo...',
+    '..obbbbbbbbbbo..',
+    '..obbbbbbbbbbo..',
+    '.obbbbbbbbbbbbo.',
+    '.obbeebbbbeebbo.',
+    '.obbeebbbbeebbo.',
+    '.obbwwwwwwwwbbo.',
+    '..obbbwwwwbbbo..',
+    '...obbwwwwbbo...',
+    '...obbbbbbbbo...',
+    '..obbbbbbbbbbo..',
+    '..obbbbbbbbbbo..',
+    '..obbbbbbbbbbo..',
+    '..obbbbbbbbbbo..',
+    '..obbbbbbbbbbo..',
+    '..obbbbbbbbbbo..',
+    '..obboooooobbo..',
+    '...oo......oo...'
+  ];
+
+  /* 两只耳朵独立成小矩阵，方便做“抖耳朵”动画 */
+  var EAR_A = [
+    '..oo.',
+    '.obbo',
+    '.oppo',
+    'obbbo'
+  ];
+  var EAR_B = [
+    '..oo.',
+    '.oppo',
+    '.obbo',
+    'obbbo'
+  ];
+
+  function mirrorRows(rows) {
+    return rows.map(function (r) { return r.split('').reverse().join(''); });
+  }
+  var EAR_A_R = mirrorRows(EAR_A);
+  var EAR_B_R = mirrorRows(EAR_B);
+
+  /* 尾巴三帧，循环切换就是摇尾巴 */
+  var TAIL_A = [
+    '...obb',
+    '..obbo',
+    '..obo.',
+    '.obbo.',
+    '.obo..',
+    'obbo..',
+    'oo....'
+  ];
+  var TAIL_B = [
+    '...obb',
+    '..obbo',
+    '..obo.',
+    '..obo.',
+    '.obbo.',
+    '.obo..',
+    'oo....'
+  ];
+  var TAIL_C = [
+    '...obb',
+    '..obbo',
+    '.obbo.',
+    'obbo..',
+    'obo...',
+    'oo....',
+    '......'
+  ];
+  var TAILS = [TAIL_A, TAIL_B, TAIL_C];
+
+  /* 一滴眼泪 */
+  var TEAR = [
+    '.d',
+    'dd',
+    'dD',
+    '.D'
+  ];
+
+  /* 小猫在网格里的落点 */
+  var CAT_X = 8;
+  var CAT_Y = 8;
+
+  /* ==========================================================
+     4. 背景星点（固定种子，保证每帧位置一致）
+     ========================================================== */
+  var STARS = [];
+  (function () {
+    var seed = 20220228;
+    function rnd() {
+      seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+      return seed / 0x7fffffff;
+    }
+    for (var i = 0; i < 26; i++) {
+      STARS.push({
+        x: Math.floor(rnd() * GW),
+        y: Math.floor(rnd() * GH),
+        ph: rnd() * Math.PI * 2,
+        sp: 1 + rnd() * 2.5,
+        warm: rnd() > 0.78
+      });
+    }
+  })();
+
+  /* ==========================================================
+     5. 绘制工具
+     ========================================================== */
+  function px(x, y, color) {
+    ctx.fillStyle = color;
+    ctx.fillRect(x * S, y * S, S, S);
+  }
+
+  function drawSprite(rows, ox, oy, opt) {
+    opt = opt || {};
+    if (opt.alpha !== undefined) ctx.globalAlpha = opt.alpha;
+
+    for (var y = 0; y < rows.length; y++) {
+      var row = rows[y];
+      for (var x = 0; x < row.length; x++) {
+        var ch = row.charAt(x);
+        if (ch === '.' || ch === ' ') continue;
+        var key = (opt.blink && ch === 'e') ? 'b' : ch;
+        var color = PAL[key];
+        if (!color) continue;
+        ctx.fillStyle = color;
+        ctx.fillRect((ox + x) * S, (oy + y) * S, S, S);
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawBackdrop(t) {
+    ctx.fillStyle = '#04070a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    for (var y = 0; y < GH; y += 2) {
+      for (var x = 0; x < GW; x += 2) {
+        if ((x + y) % 4 === 0) px(x, y, '#07130d');
+      }
+    }
+
+    for (var i = 0; i < STARS.length; i++) {
+      var st = STARS[i];
+      var a = 0.2 + 0.8 * (0.5 + 0.5 * Math.sin(t * st.sp + st.ph));
+      ctx.globalAlpha = a * 0.75;
+      px(st.x, st.y, st.warm ? '#ffd166' : '#2fbf7d');
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  function drawShadow(centerX) {
+    var half = 6;
+    for (var x = centerX - half; x <= centerX + half; x++) {
+      var d = Math.abs(x - centerX) / half;
+      ctx.globalAlpha = 0.15 + 0.45 * (1 - d);
+      px(x, 27, '#0b2b1c');
+    }
+    ctx.globalAlpha = 1;
+  }
+
+  function drawFace(catX, catY, mode) {
+    /* 粉色小鼻子 */
+    px(catX + 7, catY + 7, PAL.p);
+    px(catX + 8, catY + 7, PAL.p);
+
+    if (mode === 'cry') {
+      /* 难过的嘴角（∩ 形） */
+      px(catX + 6, catY + 9, PAL.o);
+      px(catX + 7, catY + 8, PAL.o);
+      px(catX + 8, catY + 8, PAL.o);
+      px(catX + 9, catY + 9, PAL.o);
+    } else {
+      /* 平静的小嘴 */
+      px(catX + 7, catY + 8, PAL.o);
+      px(catX + 8, catY + 8, PAL.o);
+    }
+  }
+
+  /* ==========================================================
+     6. 主循环
+     ========================================================== */
+  var pinned = 'auto';
+  var t0 = null;
+  var labelEl = document.getElementById('modeLabel');
+  var buttons = document.querySelectorAll('.buttons button');
+
+  function activeMode(t) {
+    if (pinned === 'dance' || pinned === 'cry') return pinned;
+    return (t % 14) < 8 ? 'dance' : 'cry';   /* auto：跳 8 秒，哭 6 秒 */
+  }
+
+  function render(now) {
+    if (t0 === null) t0 = now;
+    var t = (now - t0) / 1000;
+
+    var mode = activeMode(t);
+    var dancing = (mode === 'dance');
+
+    drawBackdrop(t);
+
+    /* 姿态：跳舞时上下弹跳 + 左右摇摆；哭的时候轻微发抖 */
+    var bob    = dancing ? Math.sin(t * 3.4) * 1.6 : Math.sin(t * 9) * 0.7;
+    var sway   = dancing ? Math.round(Math.sin(t * 1.7)) : 0;
+    var shake  = dancing ? 0 : Math.round(Math.sin(t * 26) * 0.9);
+
+    var catX = CAT_X + sway + shake;
+    var catY = CAT_Y - Math.round(bob);
+
+    var blink  = dancing ? (t % 3.6) > 3.40 : (t % 1.5) > 1.22;
+    var twitch = (t % 2.2) > 1.92;
+
+    drawShadow(CAT_X);
+
+    /* 耳朵：先于身体绘制，所以看起来在头后面 */
+    drawSprite(twitch ? EAR_B : EAR_A, catX + 3, catY - 4);
+    drawSprite(twitch ? EAR_B_R : EAR_A_R, catX + 8, catY - 4);
+
+    /* 尾巴：跳舞时快速循环三帧，哭泣时下垂 */
+    var tailIdx = dancing
+      ? Math.floor(t * 7) % 3
+      : (((t * 2.2) % 1) > 0.5 ? 2 : 1);
+    drawSprite(TAILS[tailIdx], catX + 13, catY + 9);
+
+    /* 身体 */
+    drawSprite(CAT, catX, catY, { blink: blink });
+
+    if (blink) {
+      /* 闭眼：画一条深色短线 */
+      px(catX + 4,  catY + 6, PAL.o);
+      px(catX + 5,  catY + 6, PAL.o);
+      px(catX + 10, catY + 6, PAL.o);
+      px(catX + 11, catY + 6, PAL.o);
+    } else {
+      /* 眼睛高光 */
+      px(catX + 5,  catY + 5, PAL.h);
+      px(catX + 11, catY + 5, PAL.h);
+    }
+
+    drawFace(catX, catY, mode);
+
+    /* 眼泪：左右眼各两滴，相位错开往下掉 */
+    if (!dancing) {
+      for (var i = 0; i < 4; i++) {
+        var side = i % 2;
+        var ph = (t * 0.8 + Math.floor(i / 2) * 0.5 + side * 0.15) % 1;
+        var tx = catX + (side === 0 ? 4 : 10);
+        var ty = catY + 7 + Math.floor(ph * 13);
+        var alpha = ph > 0.78 ? (1 - ph) / 0.22 : 1;
+        drawSprite(TEAR, tx, ty, { alpha: Math.max(0, Math.min(1, alpha)) });
+      }
+    } else {
+      /* 跳舞时向上飘的小光点 */
+      var spots = [
+        [-4, 12, '#5dfc9b'],
+        [17, 10, '#ffd166'],
+        [6, 15, '#5dfc9b']
+      ];
+      for (var k = 0; k < spots.length; k++) {
+        var p2 = (t * 0.5 + k / 3) % 1;
+        ctx.globalAlpha = Math.sin(p2 * Math.PI) * 0.9;
+        px(catX + spots[k][0], catY + spots[k][1] - Math.floor(p2 * 8), spots[k][2]);
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    var txt = mode.toUpperCase();
+    if (labelEl.textContent !== txt) labelEl.textContent = txt;
+
+    requestAnimationFrame(render);
+  }
+
+  /* ==========================================================
+     7. 按钮：AUTO / DANCE / CRY
+     ========================================================== */
+  for (var i = 0; i < buttons.length; i++) {
+    (function (btn) {
+      btn.setAttribute('aria-pressed', String(btn.getAttribute('data-mode') === 'auto'));
+      btn.addEventListener('click', function () {
+        pinned = btn.getAttribute('data-mode');
+        for (var j = 0; j < buttons.length; j++) {
+          buttons[j].setAttribute('aria-pressed', String(buttons[j] === btn));
+        }
+        btn.blur();
+      });
+    })(buttons[i]);
+  }
+
+  requestAnimationFrame(render);
+})();
+</script>
+</body>
+</html>

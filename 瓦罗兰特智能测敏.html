@@ -1,0 +1,1132 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VALORANT 灵敏度测试与智能推荐系统</title>
+<style>
+  *{box-sizing:border-box}
+  :root{
+    --bg:#03060a;
+    --panel:rgba(9,18,23,.88);
+    --panel2:rgba(7,14,19,.9);
+    --brd:#0f3a30;
+    --brd-hi:#1b6b56;
+    --grn:#00ffa3;
+    --grn2:#7dffd0;
+    --txt:#cdf8e9;
+    --mut:#6f9f92;
+    --red:#ff3b5c;
+    --amber:#ffbe3d;
+    --cyan:#00e0ff;
+  }
+  html,body{margin:0;padding:0}
+  body{
+    min-height:100vh;
+    background:
+      radial-gradient(1200px 620px at 12% -12%, rgba(0,255,163,.10), transparent 62%),
+      radial-gradient(900px 520px at 102% 2%, rgba(0,224,255,.075), transparent 58%),
+      var(--bg);
+    color:var(--txt);
+    font-family:"Consolas","Menlo","DejaVu Sans Mono","Microsoft YaHei","PingFang SC",monospace;
+    font-size:14px;
+    line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .fx-grid{position:fixed;inset:0;pointer-events:none;z-index:0;
+    background-image:
+      linear-gradient(rgba(0,255,163,.05) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(0,255,163,.05) 1px,transparent 1px);
+    background-size:46px 46px;
+    -webkit-mask-image:radial-gradient(circle at 50% 18%,#000 30%,transparent 88%);
+    mask-image:radial-gradient(circle at 50% 18%,#000 30%,transparent 88%);
+  }
+  .fx-scan{position:fixed;inset:0;pointer-events:none;z-index:1;opacity:.22;
+    background:repeating-linear-gradient(180deg,rgba(0,255,163,.06) 0 1px,transparent 1px 3px);}
+  .wrap{position:relative;z-index:2;max-width:1360px;margin:0 auto;padding:22px 20px 60px}
+  .top{display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between;
+    border-bottom:1px solid var(--brd);padding-bottom:14px;margin-bottom:20px}
+  .brand{display:flex;align-items:center;gap:14px}
+  .mark{width:44px;height:44px;flex:0 0 44px;display:grid;place-items:center;
+    border:1px solid var(--brd-hi);color:var(--grn);font-size:22px;font-weight:700;
+    background:linear-gradient(160deg,rgba(0,255,163,.16),rgba(0,255,163,.02));
+    box-shadow:0 0 22px rgba(0,255,163,.18), inset 0 0 18px rgba(0,255,163,.09);
+    clip-path:polygon(0 0,100% 0,100% 72%,72% 100%,0 100%)}
+  .brand h1{margin:0;font-size:17px;letter-spacing:2px;color:#e9fff8;
+    text-shadow:0 0 14px rgba(0,255,163,.45)}
+  .brand .sub{margin:3px 0 0;font-size:11px;letter-spacing:1.6px;color:var(--mut)}
+  .sys{display:flex;align-items:center;gap:8px;font-size:11.5px;letter-spacing:1.2px;
+    color:var(--grn2);border:1px solid var(--brd);padding:7px 12px;background:rgba(0,255,163,.04)}
+  .led{width:7px;height:7px;border-radius:50%;background:var(--grn);
+    box-shadow:0 0 10px var(--grn);animation:blink 1.8s infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+  .grid{display:grid;grid-template-columns:minmax(330px,368px) minmax(0,1fr);gap:18px}
+  .span2{grid-column:1 / -1}
+  @media (max-width:1040px){.grid{grid-template-columns:1fr}}
+  .panel{position:relative;background:var(--panel);border:1px solid var(--brd);
+    padding:16px 16px 18px;box-shadow:0 0 0 1px rgba(0,0,0,.4) inset}
+  .panel::after{content:"";position:absolute;left:0;top:0;width:70px;height:2px;
+    background:linear-gradient(90deg,var(--grn),transparent)}
+  .ttl{display:flex;align-items:baseline;gap:10px;margin:0 0 14px;font-size:13px;
+    letter-spacing:2px;color:#dffff5}
+  .ttl .no{font-size:10.5px;color:var(--grn);border:1px solid var(--brd-hi);
+    padding:1px 6px;letter-spacing:1px}
+  .ttl .hint{margin-left:auto;font-size:10.5px;color:var(--mut);letter-spacing:.6px}
+  .field{margin-bottom:13px}
+  .field label{display:flex;justify-content:space-between;align-items:baseline;
+    font-size:11.5px;letter-spacing:1.1px;color:var(--mut);margin-bottom:6px}
+  .field label b{color:var(--grn2);font-weight:600;letter-spacing:.5px}
+  .ipwrap{display:flex;align-items:center;gap:8px;border:1px solid var(--brd);
+    background:var(--panel2);padding:0 10px;transition:.18s}
+  .ipwrap:focus-within{border-color:var(--grn);box-shadow:0 0 16px rgba(0,255,163,.18)}
+  .ipwrap input{flex:1;min-width:0;background:transparent;border:0;outline:0;
+    color:#eafff8;font-family:inherit;font-size:17px;padding:10px 0;letter-spacing:1px}
+  .ipwrap .unit{font-size:11px;color:var(--mut);letter-spacing:1px}
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  input[type=number]{-moz-appearance:textfield;appearance:textfield}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:7px}
+  .chip{font-size:11px;letter-spacing:.8px;color:var(--mut);background:rgba(0,255,163,.05);
+    border:1px solid var(--brd);padding:3px 9px;cursor:pointer;transition:.15s;font-family:inherit}
+  .chip:hover{color:var(--grn);border-color:var(--brd-hi);background:rgba(0,255,163,.12)}
+  .err{display:none;margin-top:10px;border:1px solid rgba(255,59,92,.45);
+    background:rgba(255,59,92,.08);color:#ffb4c1;font-size:11.5px;padding:8px 10px}
+  .err.on{display:block}
+  .btns{display:flex;gap:10px;margin-top:16px}
+  button.act{flex:1;cursor:pointer;font-family:inherit;font-size:12.5px;letter-spacing:1.6px;
+    padding:12px 10px;border:1px solid var(--brd-hi);color:var(--grn);
+    background:linear-gradient(180deg,rgba(0,255,163,.14),rgba(0,255,163,.03));transition:.18s}
+  button.act:hover{background:rgba(0,255,163,.22);box-shadow:0 0 20px rgba(0,255,163,.3);
+    color:#eafff8}
+  button.act.ghost{flex:0 0 auto;padding:12px 14px;color:var(--mut);border-color:var(--brd);
+    background:transparent;letter-spacing:1px}
+  button.act.ghost:hover{color:var(--grn2);border-color:var(--brd-hi);box-shadow:none}
+  .readout{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .cell{border:1px solid var(--brd);background:var(--panel2);padding:12px 12px 13px;position:relative;overflow:hidden}
+  .cell .k{font-size:10.5px;letter-spacing:1.4px;color:var(--mut)}
+  .cell .v{font-size:25px;letter-spacing:1px;color:var(--grn);margin-top:3px;
+    text-shadow:0 0 16px rgba(0,255,163,.5);white-space:nowrap}
+  .cell .v small{font-size:11px;color:var(--mut);text-shadow:none;margin-left:3px}
+  .cell .n{font-size:10.5px;color:var(--mut);margin-top:2px}
+  .cmp{margin-top:12px;border:1px solid var(--brd);background:var(--panel2);padding:12px}
+  .cmp .head{display:flex;justify-content:space-between;font-size:11px;color:var(--mut);letter-spacing:1px}
+  .cmp .verdict{font-size:13px;color:var(--amber);margin-top:5px;letter-spacing:.6px}
+  .track{position:relative;height:9px;margin:24px 0 8px;background:rgba(0,255,163,.07);
+    border:1px solid var(--brd)}
+  .track .fill{position:absolute;left:0;top:0;bottom:0;width:0%;
+    background:linear-gradient(90deg,rgba(0,255,163,.25),rgba(0,255,163,.6));transition:width .25s}
+  .mk{position:absolute;top:-4px;width:2px;height:17px;transition:left .25s}
+  .mk.u{background:var(--grn);box-shadow:0 0 12px var(--grn)}
+  .mk.p{background:var(--cyan);box-shadow:0 0 10px var(--cyan)}
+  .mk .t{position:absolute;top:-19px;left:50%;transform:translateX(-50%);
+    font-size:10px;white-space:nowrap;color:var(--mut)}
+  .mk.u .t{color:var(--grn)}
+  .mk.p .t{color:var(--cyan)}
+  .tips{margin:10px 0 0;padding:0;list-style:none;font-size:11.5px;color:var(--mut)}
+  .tips li{padding:4px 0 4px 14px;position:relative;border-top:1px dashed rgba(15,58,48,.9)}
+  .tips li:first-child{border-top:0}
+  .tips li::before{content:">";position:absolute;left:0;color:var(--grn)}
+  .tips b{color:var(--grn2);font-weight:600}
+  .stage{position:relative;border:1px solid var(--brd);background:#02070a;
+    box-shadow:0 0 40px rgba(0,255,163,.07) inset}
+  canvas#aim{display:block;width:100%;height:auto;max-width:800px;margin:0 auto;
+    cursor:crosshair;touch-action:none;background:#02070a}
+  .stage.locked canvas#aim{cursor:none}
+  .overlay{position:absolute;inset:0;display:grid;place-items:center;text-align:center;
+    background:rgba(2,7,10,.72);pointer-events:none;padding:20px}
+  .overlay.off{display:none}
+  .overlay .box{border:1px solid var(--brd-hi);background:rgba(3,10,13,.88);padding:20px 24px;max-width:540px}
+  .overlay h3{margin:0 0 8px;font-size:15px;letter-spacing:2.4px;color:var(--grn);
+    text-shadow:0 0 18px rgba(0,255,163,.5)}
+  .overlay p{margin:6px 0 0;font-size:12px;color:var(--mut);line-height:1.8}
+  .overlay kbd{border:1px solid var(--brd-hi);color:var(--grn2);padding:0 6px;font-size:11px;
+    background:rgba(0,255,163,.08)}
+  .hud{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+  .hud .h{flex:1 1 118px;border:1px solid var(--brd);background:var(--panel2);padding:9px 11px}
+  .hud .h .k{font-size:10px;letter-spacing:1.3px;color:var(--mut)}
+  .hud .h .v{font-size:18px;color:#eafff8;letter-spacing:.8px}
+  .hud .h .v.g{color:var(--grn)}
+  .note{margin-top:10px;font-size:11px;color:var(--mut);letter-spacing:.4px}
+  .note.warn{color:var(--amber)}
+  canvas#chart{display:block;width:100%;height:auto;background:#02070a;border:1px solid var(--brd)}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;font-size:11px;color:var(--mut)}
+  .legend i{display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px}
+  .kv{width:100%;border-collapse:collapse;font-size:12px;background:rgba(7,14,19,.6)}
+  .kv th,.kv td{border:1px solid rgba(15,58,48,.85);padding:8px 10px;text-align:left;vertical-align:top}
+  .kv th{background:rgba(0,255,163,.07);color:var(--grn2);font-weight:600;letter-spacing:1px;
+    width:190px;white-space:nowrap}
+  .kv td b{color:var(--grn);font-weight:700}
+  .kv td span{color:var(--mut)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media (max-width:760px){.two{grid-template-columns:1fr}}
+  .diag{border-left:3px solid var(--grn);background:linear-gradient(90deg,rgba(0,255,163,.11),transparent 70%);
+    padding:14px 16px}
+  .diag .tag{font-size:10.5px;letter-spacing:2px;color:var(--mut)}
+  .diag .name{font-size:22px;letter-spacing:2px;margin:4px 0 6px;color:var(--grn);
+    text-shadow:0 0 20px rgba(0,255,163,.45)}
+  .diag .why{font-size:12px;color:var(--txt);opacity:.9}
+  .subttl{font-size:11.5px;letter-spacing:1.8px;color:var(--grn2);margin:18px 0 9px;
+    border-bottom:1px dashed rgba(15,58,48,.9);padding-bottom:6px}
+  .placeholder{color:var(--mut);font-size:12px;border:1px dashed rgba(15,58,48,.9);
+    padding:18px;text-align:center;letter-spacing:.8px}
+  .dir{display:inline-block;font-size:11px;letter-spacing:1.6px;padding:2px 10px;margin-left:8px;
+    border:1px solid currentColor;vertical-align:2px}
+  .dir.down{color:var(--red)}
+  .dir.up{color:var(--cyan)}
+  .dir.keep{color:var(--grn)}
+  .warnbox{border:1px solid rgba(255,190,61,.35);background:rgba(255,190,61,.07);
+    color:#ffe1a6;font-size:12px;padding:10px 12px;margin-top:12px}
+  .warnbox b{color:#fff3d6}
+  .foot{margin-top:26px;font-size:10.5px;color:var(--mut);letter-spacing:1px;text-align:center}
+</style>
+</head>
+<body>
+<div class="fx-grid"></div>
+<div class="fx-scan"></div>
+<div class="wrap">
+  <header class="top">
+    <div class="brand">
+      <div class="mark">V</div>
+      <div>
+        <h1>VALORANT 灵敏度测试与智能推荐系统</h1>
+        <p class="sub">SENSITIVITY LAB &middot; eDPI / cm-360 ANALYZER &middot; AIM BENCHMARK v2.4</p>
+      </div>
+    </div>
+    <div class="sys"><span class="led"></span> 本地运算 &middot; 无需联网 &middot; 纯前端</div>
+  </header>
+  <main class="grid">
+    <section class="panel">
+      <h2 class="ttl"><span class="no">01</span>硬件与参数<span class="hint">输入即算</span></h2>
+      <div class="field">
+        <label>鼠标 DPI <b id="dpiEcho">800</b></label>
+        <div class="ipwrap">
+          <input id="dpi" type="number" min="50" max="32000" step="50" value="800" inputmode="decimal" />
+          <span class="unit">DPI</span>
+        </div>
+        <div class="chips">
+          <button class="chip" data-dpi="400">400</button>
+          <button class="chip" data-dpi="800">800</button>
+          <button class="chip" data-dpi="1200">1200</button>
+          <button class="chip" data-dpi="1600">1600</button>
+          <button class="chip" data-dpi="3200">3200</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>游戏内灵敏度 <b id="sensEcho">0.400</b></label>
+        <div class="ipwrap">
+          <input id="sens" type="number" min="0.001" max="10" step="0.001" value="0.400" inputmode="decimal" />
+          <span class="unit">SENS</span>
+        </div>
+        <div class="chips">
+          <button class="chip" data-sens="0.25">0.25</button>
+          <button class="chip" data-sens="0.35">0.35</button>
+          <button class="chip" data-sens="0.40">0.40</button>
+          <button class="chip" data-sens="0.50">0.50</button>
+          <button class="chip" id="btnFair">对齐职业均值 280 eDPI</button>
+        </div>
+      </div>
+      <div class="field">
+        <label>鼠标垫宽度 <b id="padEcho">45</b></label>
+        <div class="ipwrap">
+          <input id="pad" type="number" min="5" max="200" step="0.5" value="45" inputmode="decimal" />
+          <span class="unit">CM</span>
+        </div>
+        <div class="chips">
+          <button class="chip" data-pad="25">25</button>
+          <button class="chip" data-pad="35">35</button>
+          <button class="chip" data-pad="45">45</button>
+          <button class="chip" data-pad="50">50</button>
+          <button class="chip" data-pad="90">90</button>
+        </div>
+      </div>
+      <div class="err" id="err"></div>
+      <div class="btns">
+        <button class="act" id="startBtn">开始瞄准测试</button>
+        <button class="act ghost" id="resetBtn">重置</button>
+      </div>
+      <p class="note">测试将请求指针锁定（Pointer Lock），按 <b style="color:var(--grn2)">ESC</b> 可随时退出。</p>
+    </section>
+    <section class="panel">
+      <h2 class="ttl"><span class="no">02</span>实时换算<span class="hint">随输入同步刷新</span></h2>
+      <div class="readout">
+        <div class="cell">
+          <div class="k">eDPI 有效灵敏度</div>
+          <div class="v" id="edpi">320</div>
+          <div class="n">DPI &times; 游戏内灵敏度</div>
+        </div>
+        <div class="cell">
+          <div class="k">CM / 360&deg;</div>
+          <div class="v" id="cm360">40.9<small>cm</small></div>
+          <div class="n">完成一次完整转身的距离</div>
+        </div>
+      </div>
+      <div class="cmp">
+        <div class="head"><span>与职业选手均值对比</span><span>基准 280 eDPI</span></div>
+        <div class="verdict" id="verdict">--</div>
+        <div class="track">
+          <div class="fill" id="barFill"></div>
+          <div class="mk p" id="mkPro" style="left:46.7%"><span class="t">职业 280</span></div>
+          <div class="mk u" id="mkUser" style="left:53.3%"><span class="t">你</span></div>
+        </div>
+        <ul class="tips" id="liveTips"></ul>
+      </div>
+    </section>
+    <section class="panel">
+      <h2 class="ttl"><span class="no">03</span>瞄准测试<span class="hint" id="aimHint">30 个目标 &middot; 随机刷新</span></h2>
+      <div class="stage" id="stage">
+        <canvas id="aim" width="800" height="600"></canvas>
+        <div class="overlay" id="overlay">
+          <div class="box" id="overlayBox"></div>
+        </div>
+      </div>
+      <div class="hud">
+        <div class="h"><div class="k">进度</div><div class="v" id="hudProg">0 / 30</div></div>
+        <div class="h"><div class="k">命中</div><div class="v g" id="hudHit">0</div></div>
+        <div class="h"><div class="k">命中率</div><div class="v" id="hudAcc">--%</div></div>
+        <div class="h"><div class="k">平均反应</div><div class="v" id="hudRt">-- ms</div></div>
+        <div class="h"><div class="k">状态</div><div class="v" id="hudState">待机</div></div>
+      </div>
+      <p class="note" id="lockNote">提示：开始后鼠标指针会被锁定，屏幕中央出现荧光准星，移动鼠标把准星移入红点后点击即可命中。</p>
+      <p class="note" id="scaleNote">画面缩放补偿：--</p>
+    </section>
+    <section class="panel span2">
+      <h2 class="ttl"><span class="no">04</span>反应时间图表<span class="hint">逐目标记录</span></h2>
+      <canvas id="chart" width="1200" height="300"></canvas>
+      <div class="legend">
+        <span><i style="background:#00ffa3"></i>优秀 (&lt;350ms)</span>
+        <span><i style="background:#ffbe3d"></i>一般 (350-500ms)</span>
+        <span><i style="background:#ff3b5c"></i>偏慢 (&gt;500ms)</span>
+        <span><i style="background:#31474f"></i>未命中 / 超时</span>
+        <span><i style="background:#00e0ff"></i>平均反应线</span>
+      </div>
+    </section>
+    <section class="panel span2">
+      <h2 class="ttl"><span class="no">05</span>智能诊断报告<span class="hint">测试完成后自动生成</span></h2>
+      <div id="report"><div class="placeholder">暂无数据 &middot; 请先在上方开始 30 目标的瞄准测试，完成后此处将输出完整诊断与灵敏度调整方案。</div></div>
+    </section>
+  </main>
+  <p class="foot">VALORANT SENSITIVITY LAB &middot; 所有计算均在你的浏览器本地完成 &middot; 无外部接口调用</p>
+</div>
+<script>
+/* =====================================================================
+   VALORANT 灵敏度测试与智能推荐系统
+   纯前端实现：单文件 / 无外部依赖 / 无外部接口
+   ===================================================================== */
+(function () {
+  "use strict";
+
+  /* ---------------- 常量 ---------------- */
+  var V = {
+    K: 0.07,          // Valorant 灵敏度系数：每 1 count 转动 0.07 度
+    PRO: 280,         // 职业选手平均 eDPI
+    TOTAL: 30,        // 目标总数
+    R: 20,            // 目标半径 px
+    SPAWN_MIN: 600,   // 随机刷新间隔下限 ms
+    SPAWN_MAX: 1600,  // 随机刷新间隔上限 ms
+    TIMEOUT: 4000,    // 单个目标超时 ms
+    LEAD_IN: 1100     // 锁定后准备时间 ms
+  };
+  var W = 800, H = 600;
+
+  function $(id) { return document.getElementById(id); }
+  var el = {
+    dpi: $("dpi"), sens: $("sens"), pad: $("pad"),
+    dpiEcho: $("dpiEcho"), sensEcho: $("sensEcho"), padEcho: $("padEcho"),
+    edpi: $("edpi"), cm360: $("cm360"), verdict: $("verdict"),
+    barFill: $("barFill"), mkUser: $("mkUser"), mkPro: $("mkPro"), liveTips: $("liveTips"),
+    err: $("err"), startBtn: $("startBtn"), resetBtn: $("resetBtn"), btnFair: $("btnFair"),
+    canvas: $("aim"), stage: $("stage"), overlay: $("overlay"), overlayBox: $("overlayBox"),
+    hudProg: $("hudProg"), hudHit: $("hudHit"), hudAcc: $("hudAcc"), hudRt: $("hudRt"),
+    hudState: $("hudState"), aimHint: $("aimHint"), lockNote: $("lockNote"),
+    scaleNote: $("scaleNote"), chart: $("chart"), report: $("report")
+  };
+  var ctx = el.canvas.getContext("2d");
+  var cctx = el.chart.getContext("2d");
+
+  function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+  function fmt(v, d) { d = (d === undefined ? 2 : d); return isFinite(v) ? Number(v).toFixed(d) : "--"; }
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function num(v) { var n = parseFloat(v); return isFinite(n) ? n : NaN; }
+
+  /* ---------------- 灵敏度换算 ---------------- */
+  function cm360(dpi, sens) {
+    if (!(dpi > 0) || !(sens > 0)) return NaN;
+    return 360 / (dpi * sens * V.K) * 2.54;
+  }
+  function readCfg() {
+    return { dpi: num(el.dpi.value), sens: num(el.sens.value), pad: num(el.pad.value) };
+  }
+  function validate(c) {
+    if (!(c.dpi >= 50 && c.dpi <= 32000)) return "DPI 请输入 50 - 32000 之间的数值。";
+    if (!(c.sens >= 0.001 && c.sens <= 10)) return "游戏内灵敏度请输入 0.001 - 10 之间的数值。";
+    if (!(c.pad >= 5 && c.pad <= 200)) return "鼠标垫宽度请输入 5 - 200 cm 之间的数值。";
+    return "";
+  }
+  function showErr(msg) {
+    if (msg) { el.err.textContent = "! " + msg; el.err.classList.add("on"); }
+    else { el.err.textContent = ""; el.err.classList.remove("on"); }
+  }
+
+  /* ---------------- 实时换算区 ---------------- */
+  function updateLive() {
+    var c = readCfg();
+    el.dpiEcho.textContent = isFinite(c.dpi) ? c.dpi : "--";
+    el.sensEcho.textContent = isFinite(c.sens) ? c.sens.toFixed(3) : "--";
+    el.padEcho.textContent = isFinite(c.pad) ? c.pad : "--";
+
+    var edpi = (isFinite(c.dpi) && isFinite(c.sens)) ? c.dpi * c.sens : NaN;
+    var cm = cm360(c.dpi, c.sens);
+    el.edpi.textContent = isFinite(edpi) ? String(Math.round(edpi)) : "----";
+    el.cm360.innerHTML = (isFinite(cm) ? cm.toFixed(1) : "--") + "<small>cm</small>";
+
+    var SCALE = 600;
+    var upos = isFinite(edpi) ? clamp(edpi / SCALE * 100, 0, 100) : 0;
+    el.barFill.style.width = upos + "%";
+    el.mkPro.style.left = (V.PRO / SCALE * 100) + "%";
+    el.mkUser.style.left = upos + "%";
+    el.mkUser.querySelector(".t").textContent = "你 " + (isFinite(edpi) ? Math.round(edpi) : "--");
+
+    if (isFinite(edpi)) {
+      var diff = edpi - V.PRO, dpct = diff / V.PRO * 100;
+      if (Math.abs(dpct) <= 8) {
+        el.verdict.textContent = "eDPI " + Math.round(edpi) + " · 与职业均值几乎重合（" +
+          (dpct >= 0 ? "+" : "") + dpct.toFixed(1) + "%），属于职业主流区间。";
+        el.verdict.style.color = "var(--grn)";
+      } else if (dpct > 0) {
+        el.verdict.textContent = "eDPI " + Math.round(edpi) + " · 比职业均值高 " + dpct.toFixed(1) +
+          "%，转身更省力但更容易抖动。";
+        el.verdict.style.color = "var(--amber)";
+      } else {
+        el.verdict.textContent = "eDPI " + Math.round(edpi) + " · 比职业均值低 " + Math.abs(dpct).toFixed(1) +
+          "%，更可控但拉枪与转身更吃力。";
+        el.verdict.style.color = "var(--amber)";
+      }
+    } else {
+      el.verdict.textContent = "--";
+    }
+
+    var tips = [];
+    if (isFinite(cm) && isFinite(c.pad)) {
+      var cover = c.pad / cm;
+      tips.push("<b>垫子覆盖：</b>一次完整 360° 转身需要 <b>" + cm.toFixed(1) + " cm</b>，垫子宽 " +
+        c.pad + " cm 时可完成 <b>" + cover.toFixed(2) + " 次</b>。");
+      tips.push("<b>180° 拉枪：</b>需要移动 <b>" + (cm / 2).toFixed(1) + " cm</b>。");
+      if (cover < 1) {
+        tips.push("<b style='color:var(--amber)'>垫子偏窄：</b>一次完整转身都放不下，建议把 cm/360° 压到 <b>" +
+          c.pad.toFixed(0) + " cm 以内</b>，或更换更宽的垫子。");
+      } else if (cover < 1.4) {
+        tips.push("<b style='color:var(--amber)'>余量紧张：</b>转身后剩不到半张垫子，大幅度补枪容易顶到边缘。");
+      } else {
+        tips.push("<b>垫子余量：</b>空间充足，可以放心做大幅度 flick。");
+      }
+    }
+    if (isFinite(c.dpi) && c.dpi > 0) {
+      tips.push("<b>职业均值换算：</b>在 " + Math.round(c.dpi) + " DPI 下，游戏内灵敏度填 <b>" +
+        clamp(V.PRO / c.dpi, 0.001, 10).toFixed(3) + "</b> 即为 280 eDPI。");
+    }
+    el.liveTips.innerHTML = tips.map(function (t) { return "<li>" + t + "</li>"; }).join("");
+  }
+
+  /* ---------------- 状态机 ---------------- */
+  var S = {
+    phase: "idle",   // idle | running | paused | done
+    aim: { x: W / 2, y: H / 2 },
+    dot: null,       // {x, y, spawn, deadline, clicks}
+    spawnAt: 0,
+    results: [],     // [{i, outcome, rt, clicks}]
+    clicks: 0,
+    hits: 0,
+    fx: [],
+    raf: 0,
+    pauseAt: 0,
+    lockFailed: false,
+    scale: 1,
+    stats: null
+  };
+
+  function isLocked() { return document.pointerLockElement === el.canvas; }
+  /* 画布满宽是 800 CSS px。窗口变窄时画布被等比缩小，
+     这里按「实际显示宽度 / 逻辑宽度」换算鼠标位移，
+     保证任何窗口宽度下 1 屏幕像素位移 = 1 屏幕像素准星位移。 */
+  function updateScale() {
+    var r = el.canvas.getBoundingClientRect();
+    var w = (r && r.width > 0) ? r.width : W;
+    S.scale = W / w;
+    if (!isFinite(S.scale) || S.scale <= 0) S.scale = 1;
+    if (el.scaleNote) {
+      el.scaleNote.textContent = S.scale > 1.005
+        ? "画面缩放补偿：×" + S.scale.toFixed(2) + "（画布实际显示宽 " + Math.round(w) +
+          " px，鼠标位移已按比例换算，手感与满宽一致）"
+        : "画面缩放补偿：×1.00（画布满宽显示，鼠标与准星 1:1 映射）";
+    }
+  }
+  function stateName() {
+    return { idle: "待机", running: "进行中", paused: "已暂停", done: "已完成" }[S.phase];
+  }
+  function setOverlay(html) {
+    if (!html) { el.overlay.classList.add("off"); el.overlayBox.innerHTML = ""; return; }
+    el.overlay.classList.remove("off");
+    el.overlayBox.innerHTML = html;
+  }
+  function readyHtml() {
+    return "<h3>READY / 待机</h3>" +
+      "<p>点击 <b style='color:var(--grn)'>开始瞄准测试</b>，或直接点击本区域。<br>" +
+      "屏幕上会依次出现 30 个红色目标，把准星移入红点后点击即可击破。</p>" +
+      "<p>开始后鼠标会被锁定，按 <kbd>ESC</kbd> 退出锁定并自动暂停。</p>";
+  }
+  function idleOverlay() {
+    if (S.phase === "idle") setOverlay(readyHtml());
+    else if (S.phase === "paused") setOverlay(
+      "<h3>PAUSED / 已暂停</h3>" +
+      "<p>指针锁定已解除，计时已冻结，已产生的数据不会丢失。</p>" +
+      "<p>点击本区域继续测试（会重新锁定鼠标）。</p>");
+    else if (S.phase === "done") setOverlay(
+      "<h3>COMPLETE / 测试完成</h3>" +
+      "<p>数据已写入下方诊断报告，反应时间图表也已生成。</p>" +
+      "<p>点击 <b style='color:var(--grn)'>重新测试</b> 可再来一轮。</p>");
+    else setOverlay(null);
+  }
+
+  /* ---------------- Canvas 绘制 ---------------- */
+  function drawGrid() {
+    ctx.clearRect(0, 0, W, H);
+    var g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, "#04121a");
+    g.addColorStop(1, "#02070a");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+    ctx.strokeStyle = "rgba(0,255,163,.055)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (var x = 0; x <= W; x += 40) { ctx.moveTo(x + 0.5, 0); ctx.lineTo(x + 0.5, H); }
+    for (var y = 0; y <= H; y += 40) { ctx.moveTo(0, y + 0.5); ctx.lineTo(W, y + 0.5); }
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(0,255,163,.10)";
+    ctx.beginPath();
+    ctx.moveTo(W / 2 + 0.5, H / 2 - 26); ctx.lineTo(W / 2 + 0.5, H / 2 + 26);
+    ctx.moveTo(W / 2 - 26, H / 2 + 0.5); ctx.lineTo(W / 2 + 26, H / 2 + 0.5);
+    ctx.stroke();
+    ctx.strokeStyle = "rgba(0,255,163,.18)";
+    ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+  }
+  function drawTarget(t, now) {
+    var cx = t.x, cy = t.y, r = V.R;
+    var pulse = 1 + Math.sin(now / 170) * 0.045;
+    var glow = ctx.createRadialGradient(cx, cy, 2, cx, cy, r * 2.6);
+    glow.addColorStop(0, "rgba(255,59,92,.42)");
+    glow.addColorStop(0.55, "rgba(255,59,92,.14)");
+    glow.addColorStop(1, "rgba(255,59,92,0)");
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(cx, cy, r * 2.6, 0, Math.PI * 2); ctx.fill();
+    var body = ctx.createRadialGradient(cx - r * 0.35, cy - r * 0.35, r * 0.15, cx, cy, r);
+    body.addColorStop(0, "#ff9aab");
+    body.addColorStop(0.45, "#ff2d4b");
+    body.addColorStop(1, "#8e0d24");
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(cx, cy, r * pulse, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.75)";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, r * pulse, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,.92)";
+    ctx.beginPath(); ctx.arc(cx, cy, 3, 0, Math.PI * 2); ctx.fill();
+    var left = clamp((t.deadline - now) / V.TIMEOUT, 0, 1);
+    ctx.strokeStyle = left < 0.3 ? "rgba(255,190,61,.9)" : "rgba(0,255,163,.55)";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r + 8, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * left);
+    ctx.stroke();
+  }
+  function drawCross(x, y) {
+    var gap = 7, len = 15;
+    ctx.strokeStyle = "#00ffa3";
+    ctx.lineWidth = 2;
+    ctx.shadowColor = "#00ffa3";
+    ctx.shadowBlur = 12;
+    ctx.beginPath();
+    ctx.moveTo(x - gap - len, y); ctx.lineTo(x - gap, y);
+    ctx.moveTo(x + gap, y); ctx.lineTo(x + gap + len, y);
+    ctx.moveTo(x, y - gap - len); ctx.lineTo(x, y - gap);
+    ctx.moveTo(x, y + gap); ctx.lineTo(x, y + gap + len);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = "#00ffa3";
+    ctx.beginPath(); ctx.arc(x, y, 1.8, 0, Math.PI * 2); ctx.fill();
+  }
+  function drawFx(now) {
+    for (var i = S.fx.length - 1; i >= 0; i--) {
+      var f = S.fx[i], life = (now - f.t) / 400;
+      if (life >= 1) { S.fx.splice(i, 1); continue; }
+      ctx.strokeStyle = "rgba(0,255,163," + (1 - life).toFixed(3) + ")";
+      ctx.lineWidth = 3 * (1 - life) + 0.5;
+      ctx.beginPath(); ctx.arc(f.x, f.y, 12 + life * 46, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+  function draw(now) {
+    drawGrid();
+    if (S.dot) drawTarget(S.dot, now);
+    drawFx(now);
+    if (S.phase === "running") {
+      drawCross(S.aim.x, S.aim.y);
+      ctx.fillStyle = "rgba(0,255,163,.75)";
+      ctx.font = "11px Consolas, monospace";
+      ctx.fillText("TARGET " + Math.min(S.results.length + 1, V.TOTAL) + " / " + V.TOTAL, 12, 20);
+      ctx.fillText(isLocked() ? "LOCKED" : "FREE-CURSOR", W - 100, 20);
+    }
+  }
+
+  /* ---------------- 测试流程 ---------------- */
+  function startLoop() {
+    if (S.raf) return;
+    S.raf = requestAnimationFrame(loop);
+  }
+  function loop(now) {
+    if (S.phase !== "running") { S.raf = 0; draw(now); return; }
+    if (!S.dot && now >= S.spawnAt) spawnDot(now);
+    if (S.dot && now >= S.dot.deadline) finishTarget(now, "timeout");
+    draw(now);
+    S.raf = requestAnimationFrame(loop);
+  }
+  function spawnDot(now) {
+    var m = V.R + 14;
+    S.dot = { x: rnd(m, W - m), y: rnd(m, H - m), spawn: now, deadline: now + V.TIMEOUT, clicks: 0 };
+  }
+  function finishTarget(now, outcome) {
+    if (!S.dot) return;
+    S.results.push({
+      i: S.results.length,
+      outcome: outcome,
+      rt: outcome === "hit" ? (now - S.dot.spawn) : null,
+      clicks: S.dot.clicks || 0
+    });
+    if (outcome === "hit") { S.hits++; S.fx.push({ x: S.dot.x, y: S.dot.y, t: now }); }
+    var cx = S.dot.x, cy = S.dot.y;
+    S.dot = null;
+    if (outcome === "timeout") { S.fx.push({ x: cx, y: cy, t: now }); }
+    updateHud();
+    if (S.results.length >= V.TOTAL) { finishTest(); return; }
+    S.spawnAt = now + rnd(V.SPAWN_MIN, V.SPAWN_MAX);
+  }
+  function shoot(now) {
+    if (!S.dot) return;
+    S.dot.clicks++;
+    S.clicks++;
+    var dx = S.aim.x - S.dot.x, dy = S.aim.y - S.dot.y;
+    if (Math.sqrt(dx * dx + dy * dy) <= V.R) finishTarget(now, "hit");
+    else updateHud();
+  }
+  function updateHud() {
+    var hits = 0, sum = 0, n = 0;
+    S.results.forEach(function (r) {
+      if (r.outcome === "hit") { hits++; sum += r.rt; n++; }
+    });
+    el.hudProg.textContent = S.results.length + " / " + V.TOTAL;
+    el.hudHit.textContent = String(hits);
+    el.hudAcc.textContent = (S.clicks > 0 ? (hits / S.clicks * 100).toFixed(1) : "--") + "%";
+    el.hudRt.textContent = n > 0 ? Math.round(sum / n) + " ms" : "-- ms";
+    el.hudState.textContent = stateName();
+  }
+  function beginTest() {
+    var c = readCfg();
+    var msg = validate(c);
+    if (msg) { showErr(msg); return false; }
+    showErr("");
+    cancelAnimationFrame(S.raf); S.raf = 0;
+    S.results = []; S.clicks = 0; S.hits = 0; S.fx = []; S.dot = null; S.stats = null;
+    S.aim = { x: W / 2, y: H / 2 };
+    S.phase = "running";
+    S.spawnAt = performance.now() + V.LEAD_IN;
+    updateScale();
+    setOverlay(null);
+    updateHud();
+    startLoop();
+    return true;
+  }
+  function requestLock() {
+    if (!el.canvas.requestPointerLock) { fallbackLock(); return; }
+    try {
+      var p = el.canvas.requestPointerLock();
+      if (p && typeof p.catch === "function") p.catch(function () { fallbackLock(); });
+    } catch (e) { fallbackLock(); }
+  }
+  function fallbackLock() {
+    if (S.lockFailed) return;
+    S.lockFailed = true;
+    el.lockNote.className = "note warn";
+    el.lockNote.textContent = "指针锁定不可用，已自动切换为普通鼠标模式：准星跟随系统光标位置，光标移动到哪就打到哪。";
+    startLoop();
+  }
+  function pauseTest() {
+    if (S.phase !== "running") return;
+    S.phase = "paused";
+    S.pauseAt = performance.now();
+    cancelAnimationFrame(S.raf); S.raf = 0;
+    updateHud();
+    draw(S.pauseAt);
+    idleOverlay();
+  }
+  function resumeTest() {
+    if (S.phase !== "paused") return;
+    var d = performance.now() - S.pauseAt;
+    if (S.dot) { S.dot.spawn += d; S.dot.deadline += d; }
+    S.spawnAt += d;
+    S.phase = "running";
+    setOverlay(null);
+    updateHud();
+    startLoop();
+  }
+  function finishTest() {
+    cancelAnimationFrame(S.raf); S.raf = 0;
+    S.phase = "done";
+    S.dot = null;
+    if (isLocked()) { try { document.exitPointerLock(); } catch (e) {} }
+    updateHud();
+    draw(performance.now());
+    idleOverlay();
+    S.stats = computeStats();
+    drawChart(S.stats);
+    renderReport(S.stats);
+    el.aimHint.textContent = "测试完成 · 见下方报告";
+    el.startBtn.textContent = "重新测试";
+    try { el.report.scrollIntoView({ behavior: "smooth", block: "start" }); } catch (e) {}
+  }
+  function resetAll() {
+    cancelAnimationFrame(S.raf); S.raf = 0;
+    if (isLocked()) { try { document.exitPointerLock(); } catch (e) {} }
+    S.phase = "idle"; S.dot = null; S.results = []; S.clicks = 0; S.hits = 0; S.fx = [];
+    S.aim = { x: W / 2, y: H / 2 }; S.stats = null;
+    updateHud();
+    el.aimHint.textContent = "30 个目标 · 随机刷新";
+    el.startBtn.textContent = "开始瞄准测试";
+    idleOverlay();
+    draw(performance.now());
+    drawChart(null);
+    el.report.innerHTML = '<div class="placeholder">暂无数据 · 请先在上方开始 30 目标的瞄准测试，完成后此处将输出完整诊断与灵敏度调整方案。</div>';
+  }
+
+  /* ---------------- 数据统计 ---------------- */
+  function computeStats() {
+    var c = readCfg();
+    var hits = 0, clicks = 0, timeouts = 0, rts = [];
+    S.results.forEach(function (r) {
+      clicks += r.clicks;
+      if (r.outcome === "hit") { hits++; rts.push(r.rt); } else { timeouts++; }
+    });
+    rts.sort(function (a, b) { return a - b; });
+    var avg = rts.length ? rts.reduce(function (a, b) { return a + b; }, 0) / rts.length : NaN;
+    var median = rts.length
+      ? (rts.length % 2 ? rts[(rts.length - 1) / 2] : (rts[rts.length / 2 - 1] + rts[rts.length / 2]) / 2)
+      : NaN;
+    var sd = NaN;
+    if (rts.length > 1) {
+      var s = 0;
+      rts.forEach(function (v) { s += (v - avg) * (v - avg); });
+      sd = Math.sqrt(s / (rts.length - 1));
+    }
+    return {
+      cfg: c,
+      edpi: c.dpi * c.sens,
+      cm: cm360(c.dpi, c.sens),
+      hits: hits, clicks: clicks, timeouts: timeouts,
+      misses: Math.max(0, clicks - hits),
+      hitRate: clicks > 0 ? hits / clicks * 100 : 0,
+      completion: hits / V.TOTAL * 100,
+      avg: avg, median: median, sd: sd,
+      fastest: rts.length ? rts[0] : NaN,
+      slowest: rts.length ? rts[rts.length - 1] : NaN,
+      all: S.results.slice()
+    };
+  }
+  function scoreOf(s) {
+    var acc = clamp(s.hitRate, 0, 100);
+    var spd = isFinite(s.avg) ? clamp((800 - s.avg) / 600 * 100, 0, 100) : 0;
+    return clamp(acc * 0.6 + spd * 0.4, 0, 100);
+  }
+
+  /* =====================================================================
+     核心：智能诊断逻辑
+     命中率 <60% 且 反应 <300ms  → 准星抖动，拉枪过度 → 降低 5%-10%
+     命中率 <60% 且 反应 >500ms  → 拉枪迟缓，移动吃力 → 提高 5%-10%
+     命中率 >80% 且 反应 <350ms  → 人枪合一        → 保持
+     其他情况                    → 尚有提升空间    → 微调 + 勤练
+     ===================================================================== */
+  function analyze(s) {
+    var noSample = !isFinite(s.avg);
+    var rt = noSample ? Infinity : s.avg;
+    if (s.hitRate < 60 && rt < 300) {
+      return {
+        key: "overflick", name: "准星抖动，拉枪过度", dir: "down", pct: 7.5,
+        why: "命中率只有 " + s.hitRate.toFixed(1) + "%，但平均反应仅 " + Math.round(rt) +
+          " ms —— 出手很快、落点却散，属于典型的甩过头/走火，说明当前灵敏度高于你的手臂控制精度。",
+        reason: "命中率 < 60% 且 平均反应时间 < 300ms"
+      };
+    }
+    if (s.hitRate < 60 && rt > 500) {
+      return {
+        key: "slow", name: "拉枪迟缓，移动吃力", dir: "up", pct: 7.5,
+        why: "命中率只有 " + s.hitRate.toFixed(1) + "%" +
+          (noSample ? "且 30 个目标均未在单个周期内命中（判定超过 500ms）" : "，平均反应达到 " + Math.round(rt) + " ms") +
+          " —— 鼠标要移动的距离太长，跟不上目标刷新节奏，说明当前灵敏度偏低。",
+        reason: "命中率 < 60% 且 平均反应时间 > 500ms"
+      };
+    }
+    if (s.hitRate > 80 && rt < 350) {
+      return {
+        key: "perfect", name: "人枪合一", dir: "keep", pct: 0,
+        why: "命中率 " + s.hitRate.toFixed(1) + "%，平均反应 " + Math.round(rt) +
+          " ms —— 准度高且出手快，灵敏度与你的手部习惯高度匹配，此时任何改动都是在破坏已经建立的肌肉记忆。",
+        reason: "命中率 > 80% 且 平均反应时间 < 350ms"
+      };
+    }
+    var dir = "keep", pct = 3, extra;
+    if (s.hitRate < 60) { dir = "down"; pct = 5; extra = "命中率仍在及格线以下，优先用降低灵敏度换取落点收敛。"; }
+    else if (rt > 500) { dir = "up"; pct = 5; extra = "命中率尚可但出手偏慢，适度提高灵敏度让拉枪更省力。"; }
+    else if (rt > 400) { dir = "up"; pct = 3; extra = "反应略慢于理想区间，可以先用 3% 的小幅上调试手感。"; }
+    else { dir = "keep"; pct = 3; extra = "各项指标都在及格线以上但还没进入精英区间，建议以 ±3% 为步长在靶场做 A/B 对照。"; }
+    return {
+      key: "improve", name: "尚有提升空间", dir: dir, pct: pct,
+      why: "命中率 " + s.hitRate.toFixed(1) + "%" +
+        (isFinite(rt) ? "、平均反应 " + Math.round(rt) + " ms" : "、暂无有效命中样本") +
+        " —— 数据没有落在明确的两端，属于可打磨区间。" + extra,
+      reason: "不满足以上任一条件，进入「其他情况」分支"
+    };
+  }
+  function recalc(s, dir, pct) {
+    var f = dir === "down" ? (1 - pct / 100) : (dir === "up" ? (1 + pct / 100) : 1);
+    var newSens = clamp(s.cfg.sens * f, 0.001, 10);
+    var rawDpi = Math.round(s.cfg.dpi * f);
+    var newDpi = clamp(Math.round(rawDpi / 10) * 10, 50, 32000);
+    return {
+      f: f,
+      newSens: newSens, newDpi: newDpi,
+      sensEdpi: newSens * s.cfg.dpi, sensCm: cm360(s.cfg.dpi, newSens),
+      dpiEdpi: newDpi * s.cfg.sens, dpiCm: cm360(newDpi, s.cfg.sens)
+    };
+  }
+
+  /* ---------------- 图表 ---------------- */
+  function drawChart(stats) {
+    var CW = el.chart.width, CH = el.chart.height;
+    cctx.clearRect(0, 0, CW, CH);
+    cctx.fillStyle = "#02070a";
+    cctx.fillRect(0, 0, CW, CH);
+    var L = 62, R = 22, T = 26, B = 40;
+    var plotW = CW - L - R, plotH = CH - T - B;
+    if (!stats) {
+      cctx.fillStyle = "#31474f";
+      cctx.font = "13px Consolas, monospace";
+      cctx.textAlign = "center";
+      cctx.fillText("等待测试数据 · 完成 30 个目标后自动生成反应时间分布", CW / 2, CH / 2);
+      cctx.textAlign = "left";
+      return;
+    }
+    var maxRt = 600;
+    stats.all.forEach(function (r) { if (r.rt && r.rt > maxRt) maxRt = r.rt; });
+    maxRt = Math.ceil(maxRt / 100) * 100;
+    cctx.strokeStyle = "rgba(0,255,163,.10)";
+    cctx.fillStyle = "#5f8a7d";
+    cctx.font = "11px Consolas, monospace";
+    cctx.textAlign = "right";
+    for (var v = 0; v <= maxRt; v += 100) {
+      var gy = T + plotH - (v / maxRt) * plotH;
+      cctx.beginPath(); cctx.moveTo(L, gy + 0.5); cctx.lineTo(L + plotW, gy + 0.5); cctx.stroke();
+      cctx.fillText(v + "ms", L - 8, gy + 4);
+    }
+    cctx.textAlign = "left";
+    [[350, "rgba(0,255,163,.35)", "优秀线 350"],
+     [500, "rgba(255,190,61,.35)", "偏慢线 500"]].forEach(function (p) {
+      if (p[0] > maxRt) return;
+      var ly = T + plotH - (p[0] / maxRt) * plotH;
+      cctx.save();
+      cctx.setLineDash([5, 5]);
+      cctx.strokeStyle = p[1];
+      cctx.beginPath(); cctx.moveTo(L, ly + 0.5); cctx.lineTo(L + plotW, ly + 0.5); cctx.stroke();
+      cctx.restore();
+      cctx.fillStyle = p[1];
+      cctx.font = "10px Consolas, monospace";
+      cctx.fillText(p[2], L + 4, ly - 4);
+    });
+    var n = V.TOTAL, slot = plotW / n, bw = Math.max(6, slot - 8);
+    stats.all.forEach(function (r, i) {
+      var bx = L + i * slot + (slot - bw) / 2;
+      var h, color;
+      if (r.outcome === "hit") {
+        h = (r.rt / maxRt) * plotH;
+        color = r.rt < 350 ? "#00ffa3" : (r.rt <= 500 ? "#ffbe3d" : "#ff3b5c");
+      } else {
+        h = plotH * 0.06;
+        color = "#31474f";
+      }
+      var by = T + plotH - h;
+      var grad = cctx.createLinearGradient(0, by, 0, T + plotH);
+      grad.addColorStop(0, color);
+      grad.addColorStop(1, "rgba(2,7,10,.35)");
+      cctx.fillStyle = grad;
+      cctx.fillRect(bx, by, bw, h);
+      cctx.fillStyle = color;
+      cctx.fillRect(bx, by, bw, 2);
+      if (r.outcome !== "hit") {
+        cctx.fillStyle = "rgba(255,59,92,.85)";
+        cctx.font = "11px Consolas, monospace";
+        cctx.fillText("x", bx + bw / 2 - 3, T + plotH - 7);
+      }
+      cctx.fillStyle = "rgba(95,138,125,.75)";
+      cctx.font = "9.5px Consolas, monospace";
+      if (i % 5 === 0 || i === n - 1) cctx.fillText(String(i + 1), bx + bw / 2 - 4, T + plotH + 16);
+    });
+    if (isFinite(stats.avg)) {
+      var ay = T + plotH - (stats.avg / maxRt) * plotH;
+      cctx.save();
+      cctx.setLineDash([7, 4]);
+      cctx.strokeStyle = "#00e0ff";
+      cctx.lineWidth = 1.6;
+      cctx.beginPath(); cctx.moveTo(L, ay + 0.5); cctx.lineTo(L + plotW, ay + 0.5); cctx.stroke();
+      cctx.restore();
+      cctx.fillStyle = "#00e0ff";
+      cctx.font = "bold 11px Consolas, monospace";
+      cctx.fillText("平均 " + Math.round(stats.avg) + "ms", L + plotW - 96, ay - 6);
+    }
+    cctx.strokeStyle = "rgba(15,58,48,1)";
+    cctx.lineWidth = 1;
+    cctx.beginPath();
+    cctx.moveTo(L + 0.5, T); cctx.lineTo(L + 0.5, T + plotH);
+    cctx.lineTo(L + plotW, T + plotH);
+    cctx.stroke();
+    cctx.fillStyle = "#5f8a7d";
+    cctx.font = "11px Consolas, monospace";
+    cctx.textAlign = "left";
+    cctx.fillText("目标序号 →", L + plotW - 78, T + plotH + 32);
+    cctx.save();
+    cctx.translate(16, T + plotH / 2);
+    cctx.rotate(-Math.PI / 2);
+    cctx.textAlign = "center";
+    cctx.fillText("反应时间 (ms)", 0, 0);
+    cctx.restore();
+    cctx.textAlign = "left";
+  }
+
+  /* ---------------- 报告渲染 ---------------- */
+  function row(k, v) { return "<tr><th>" + k + "</th><td>" + v + "</td></tr>"; }
+  function dirTag(dir) {
+    if (dir === "down") return '<span class="dir down">降低灵敏度</span>';
+    if (dir === "up") return '<span class="dir up">提高灵敏度</span>';
+    return '<span class="dir keep">保持不变</span>';
+  }
+  function renderReport(s) {
+    var a = analyze(s);
+    var r = recalc(s, a.dir, a.pct);
+    var sc = scoreOf(s);
+    var d = s.cfg.dpi, sn = s.cfg.sens, pd = s.cfg.pad;
+    var cover = (isFinite(s.cm) && isFinite(pd)) ? pd / s.cm : NaN;
+    var proPct = (s.edpi - V.PRO) / V.PRO * 100;
+    var noSample = !isFinite(s.avg);
+    var html = "";
+
+    /* A. 结论 */
+    html += '<div class="diag"><div class="tag">DIAGNOSIS / 诊断结论</div>' +
+      '<div class="name">' + a.name + dirTag(a.dir) + '</div>' +
+      '<div class="why">' + a.why + '</div>' +
+      '<div class="why" style="margin-top:6px;color:var(--mut);font-size:11px">触发条件：' + a.reason + '</div></div>';
+
+    /* B. 数据画像 */
+    html += '<div class="subttl">A · 本轮测试数据画像</div>';
+    html += '<table class="kv">';
+    html += row("平均反应时间", noSample
+      ? "<b>无有效命中样本</b> <span>（30 个目标均未在单个目标周期内命中，按规则判定为 &gt; 500ms）</span>"
+      : "<b>" + Math.round(s.avg) + " ms</b> <span>越快越好，职业常规区间 200-300 ms</span>");
+    html += row("命中率", "<b>" + s.hitRate.toFixed(1) + "%</b> <span>命中点击 " + s.hits +
+      " / 总点击 " + s.clicks + "（仅在目标存在时统计点击，点空算脱靶）</span>");
+    html += row("目标完成率", "<b>" + s.completion.toFixed(0) + "%</b> <span>击破 " + s.hits +
+      " / 30 个目标，超时未击破 " + s.timeouts + " 个</span>");
+    html += row("脱靶点击", "<b>" + s.misses + "</b> <span>落在 20px 目标半径之外的点击次数</span>");
+    html += row("反应稳定性", isFinite(s.sd)
+      ? "<b>±" + Math.round(s.sd) + " ms</b> <span>标准差，越小越稳；&gt;120 ms 说明手感波动偏大</span>"
+      : "<span>样本不足，无法计算离散度</span>");
+    html += row("最快 / 最慢 / 中位", isFinite(s.fastest)
+      ? "<b>" + Math.round(s.fastest) + " / " + Math.round(s.slowest) + " / " + Math.round(s.median) + " ms</b>"
+      : "<span>--</span>");
+    html += row("综合参考评分", "<b>" + sc.toFixed(0) + " / 100</b> <span>命中率占 60% + 出手速度占 40%</span>");
+    html += '</table>';
+
+    /* C. 当前灵敏度体检 */
+    html += '<div class="subttl">B · 当前灵敏度体检</div>';
+    html += '<table class="kv">';
+    html += row("当前设置", "<b>" + Math.round(d) + " DPI</b> × <b>" + sn.toFixed(3) + "</b> 游戏内灵敏度");
+    html += row("eDPI", "<b>" + Math.round(s.edpi) + "</b> <span>职业选手均值约 " + V.PRO + "，你比均值" +
+      (s.edpi >= V.PRO ? "高 " : "低 ") + Math.abs(proPct).toFixed(1) + "%</span>");
+    html += row("cm / 360°", "<b>" + s.cm.toFixed(1) + " cm</b> <span>完成一次完整转身所需的鼠标移动距离</span>");
+    html += row("鼠标垫占用", isFinite(cover)
+      ? "<b>" + (cover * 100).toFixed(0) + "%</b> <span>" + pd + " cm 宽的垫子可容纳 " + cover.toFixed(2) +
+        " 次完整 360° 转身" + (cover < 1 ? "（不足一次，偏窄）" : "") + "</span>"
+      : "<span>--</span>");
+    html += row("180° 拉枪距离", "<b>" + (s.cm / 2).toFixed(1) + " cm</b> <span>半转身，衡量大幅度 flick 的体力消耗</span>");
+    html += '</table>';
+    if (isFinite(cover) && cover < 1) {
+      html += '<div class="warnbox">物理空间警告：你的 cm/360°（' + s.cm.toFixed(1) +
+        ' cm）已经超过鼠标垫宽度（' + pd + ' cm），一次完整转身必须抬鼠分两次完成，这会直接拉高平均反应时间。' +
+        '若不更换垫子，建议把 cm/360° 压到 ' + pd.toFixed(0) + ' cm 以内。</div>';
+    }
+
+    /* D. 推荐方案 */
+    html += '<div class="subttl">C · 智能推荐方案 ' + dirTag(a.dir) + '</div>';
+    if (a.dir === "keep") {
+      var up = recalc(s, "up", 3), dn = recalc(s, "down", 3);
+      html += '<table class="kv">';
+      html += row("推荐 DPI", "<b>维持 " + Math.round(d) + " DPI</b> <span>保持现状</span>");
+      html += row("推荐游戏内灵敏度", "<b>维持 " + sn.toFixed(3) + "</b> <span>保持现状</span>");
+      html += row("推荐 eDPI", "<b>维持 " + Math.round(s.edpi) + "</b> <span>保持当前手感，专注巩固肌肉记忆</span>");
+      html += row("若必须微调的区间", "<b>" + dn.newSens.toFixed(3) + " ~ " + up.newSens.toFixed(3) +
+        "</b> <span>游戏内灵敏度，即当前值 ±3%（对应 " + dn.newDpi + " ~ " + up.newDpi + " DPI，超出此范围不建议尝试）</span>");
+      html += '</table>';
+      html += '<div class="warnbox" style="border-color:rgba(0,255,163,.35);background:rgba(0,255,163,.07);color:#c9ffe9">' +
+        '结论：<b>不要为了“再快一点”去改灵敏度</b>。当前配置已经进入高效区间，超过 3% 的改动通常会让命中率倒退 5%-15%，' +
+        '并带来 1-2 周的手感重建期。如果确实想试，单次幅度控制在 ±3% 以内，并至少观察 3 天数据再决定。</div>';
+    } else {
+      html += '<p style="font-size:12px;color:var(--mut);margin:0 0 10px">调整方向：' + a.reason +
+        ' → 建议<b style="color:var(--grn)">' + (a.dir === "down" ? "降低" : "提高") + " " + a.pct.toFixed(1) +
+        '%</b>（规则给出的区间是 5%-10%，这里取中位值，减少肌肉记忆重建成本）。两条路径二选一，不要同时改。</p>';
+      html += '<div class="two">';
+      html += '<table class="kv"><tr><th colspan="2">方案 A · 只改游戏内灵敏度（推荐）</th></tr>' +
+        row("新游戏内灵敏度", "<b>" + r.newSens.toFixed(3) + "</b> <span>当前 " + sn.toFixed(3) +
+          " → 进游戏把这个数填进去</span>") +
+        row("DPI 保持不变", "<b>" + Math.round(d) + " DPI</b> <span>无需改驱动设置</span>") +
+        row("新 eDPI", "<b>" + Math.round(r.sensEdpi) + "</b> <span>当前 " + Math.round(s.edpi) + "</span>") +
+        row("新 cm / 360°", "<b>" + r.sensCm.toFixed(1) + " cm</b> <span>当前 " + s.cm.toFixed(1) + " cm</span>") +
+        '</table>';
+      html += '<table class="kv"><tr><th colspan="2">方案 B · 只改鼠标 DPI</th></tr>' +
+        row("新 DPI", "<b>" + r.newDpi + " DPI</b> <span>当前 " + Math.round(d) +
+          " DPI → 在鼠标驱动里改成这个值（已取整到 10 的倍数）</span>") +
+        row("灵敏度保持不变", "<b>" + sn.toFixed(3) + "</b> <span>游戏内不变</span>") +
+        row("新 eDPI", "<b>" + Math.round(r.dpiEdpi) + "</b> <span>当前 " + Math.round(s.edpi) + "</span>") +
+        row("新 cm / 360°", "<b>" + r.dpiCm.toFixed(1) + " cm</b> <span>当前 " + s.cm.toFixed(1) + " cm</span>") +
+        '</table>';
+      html += '</div>';
+      html += '<div class="warnbox" style="border-color:rgba(0,255,163,.3);background:rgba(0,255,163,.06);color:#c9ffe9">' +
+        '落地建议：<b>一次只改一个变量</b>，改完先打 10 分钟靶场再进排位。新设置下 cm/360° = <b>' +
+        r.sensCm.toFixed(1) + ' cm</b>' +
+        (isFinite(pd) ? '，在 ' + pd + ' cm 的垫子上可完成 <b>' + (pd / r.sensCm).toFixed(2) + ' 次</b>完整转身。' : '。') +
+        '如果 3 天内命中率没有回升，直接回滚到原设置。</div>';
+    }
+
+    /* E. 训练处方 */
+    html += '<div class="subttl">D · 配套训练处方</div>';
+    html += '<ul class="tips" style="font-size:12px">';
+    if (a.key === "overflick") {
+      html += "<li><b>核心问题：拉过头。</b>用 Gridshot 连打 3 组，每组刻意「停住手再点」，把出手速度压慢 20%，先换落点收敛。</li>";
+      html += "<li><b>0.5 秒延迟练习：</b>看到目标后默数 0.5 秒再点击，强制放弃甩过头的预判，坚持 3 天。</li>";
+      html += "<li><b>小幅度微调：</b>只练 100px 内的近距离目标，全部用腕部完成，禁止手臂大范围甩动。</li>";
+    } else if (a.key === "slow") {
+      html += "<li><b>核心问题：位移太大。</b>先在靶场练 180° 转身击杀，确认一次挥臂能不能覆盖半个屏幕。</li>";
+      html += "<li><b>边界管理：</b>养成「击杀后回中」的习惯，让鼠标停在垫子中央再进入下一个目标，避免起手就没空间。</li>";
+      html += "<li><b>大目标连打：</b>用放大 1.5 倍的目标练手臂发力与停枪，重点是把单目标耗时压进 500ms 内。</li>";
+    } else if (a.key === "perfect") {
+      html += "<li><b>核心任务：保持一致性。</b>每天 10 分钟固定套路（Gridshot + 微调），不要频繁试新灵敏度。</li>";
+      html += "<li><b>巩固肌肉记忆：</b>连续 7 天使用同一套设置，记录每天的平均反应，观察是否稳定在 300ms 以内。</li>";
+      html += "<li><b>进阶方向：</b>加入移动靶与闪现靶，把「静态准」升级成「动态准」。</li>";
+    } else {
+      html += "<li><b>两步走：</b>先按方案调整灵敏度，再连续 3 天做同一套练习（每次 15 分钟），对比调整前后的命中率与平均反应。</li>";
+      html += "<li><b>补短板：</b>命中率低就先练落点精度；反应慢就先练大范围拉枪，不要两项一起上。</li>";
+      html += "<li><b>记录习惯：</b>每次训练后把本页的命中率与平均反应抄下来，用数据判断是否真的变强。</li>";
+    }
+    if (isFinite(s.sd) && s.sd > 120) {
+      html += "<li><b>稳定性告警：</b>本次反应时间标准差达到 ±" + Math.round(s.sd) +
+        " ms，波动偏大。训练时保持坐姿、握法与呼吸一致，避免忽快忽慢。</li>";
+    }
+    if (isFinite(cover) && cover < 1.4) {
+      html += "<li><b>硬件建议：</b>鼠标垫可用宽度不足，若短期不想换垫，优先用「方案 B 改 DPI」或换更宽的垫子来保住转身能力。</li>";
+    }
+    html += '</ul>';
+
+    /* F. 判断依据 */
+    html += '<div class="subttl">E · 判断依据说明</div>';
+    html += '<ul class="tips" style="font-size:11.5px;color:var(--mut)">' +
+      "<li>命中率 &lt; 60% 且 平均反应 &lt; 300ms → 准星抖动，拉枪过度 → 降低灵敏度 5%-10%。</li>" +
+      "<li>命中率 &lt; 60% 且 平均反应 &gt; 500ms → 拉枪迟缓，移动吃力 → 提高灵敏度 5%-10%。</li>" +
+      "<li>命中率 &gt; 80% 且 平均反应 &lt; 350ms → 人枪合一 → 保持当前灵敏度。</li>" +
+      "<li>其余情况 → 尚有提升空间 → 以 3%-5% 为步长微调，并在靶场加强练习。</li>" +
+      "<li>换算公式：eDPI = DPI × 灵敏度；cm/360° = 360 ÷ (DPI × 灵敏度 × 0.07) × 2.54。</li>" +
+      '</ul>';
+
+    el.report.innerHTML = html;
+  }
+
+  /* ---------------- 事件绑定 ---------------- */
+  ["dpi", "sens", "pad"].forEach(function (k) {
+    el[k].addEventListener("input", function () { showErr(""); updateLive(); });
+    el[k].addEventListener("change", updateLive);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".chip[data-dpi]"), function (b) {
+    b.addEventListener("click", function () { el.dpi.value = b.getAttribute("data-dpi"); showErr(""); updateLive(); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".chip[data-sens]"), function (b) {
+    b.addEventListener("click", function () { el.sens.value = b.getAttribute("data-sens"); showErr(""); updateLive(); });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".chip[data-pad]"), function (b) {
+    b.addEventListener("click", function () { el.pad.value = b.getAttribute("data-pad"); showErr(""); updateLive(); });
+  });
+  el.btnFair.addEventListener("click", function () {
+    var d = num(el.dpi.value);
+    if (!(d > 0)) { showErr("请先填写有效的 DPI。"); return; }
+    el.sens.value = clamp(V.PRO / d, 0.001, 10).toFixed(3);
+    showErr("");
+    updateLive();
+  });
+  el.startBtn.addEventListener("click", function () {
+    if (S.phase === "running") {
+      if (isLocked()) { try { document.exitPointerLock(); } catch (e) {} }
+      else { pauseTest(); el.startBtn.textContent = "继续测试"; }
+      return;
+    }
+    if (S.phase === "paused") { requestLock(); resumeTest(); el.startBtn.textContent = "暂停测试"; return; }
+    if (beginTest()) { requestLock(); el.startBtn.textContent = "暂停测试"; }
+  });
+  el.resetBtn.addEventListener("click", function () { resetAll(); });
+
+  document.addEventListener("pointerlockchange", function () {
+    if (isLocked()) {
+      el.stage.classList.add("locked");
+      updateScale();
+      if (S.phase === "paused") resumeTest(); else startLoop();
+    } else {
+      el.stage.classList.remove("locked");
+      if (S.phase === "running") { pauseTest(); el.startBtn.textContent = "继续测试"; }
+    }
+  });
+  document.addEventListener("pointerlockerror", function () { fallbackLock(); });
+
+  el.canvas.addEventListener("mousemove", function (e) {
+    if (S.phase !== "running") return;
+    if (isLocked()) {
+      S.aim.x = clamp(S.aim.x + (e.movementX || 0) * S.scale, V.R, W - V.R);
+      S.aim.y = clamp(S.aim.y + (e.movementY || 0) * S.scale, V.R, H - V.R);
+    } else {
+      var rect = el.canvas.getBoundingClientRect();
+      var sx = W / rect.width, sy = H / rect.height;
+      S.aim.x = clamp((e.clientX - rect.left) * sx, V.R, W - V.R);
+      S.aim.y = clamp((e.clientY - rect.top) * sy, V.R, H - V.R);
+    }
+  });
+  el.canvas.addEventListener("mousedown", function (e) {
+    e.preventDefault();
+    if (S.phase === "running") { shoot(performance.now()); return; }
+    if (S.phase === "paused") { requestLock(); resumeTest(); el.startBtn.textContent = "暂停测试"; return; }
+    if (S.phase === "idle") { if (beginTest()) { requestLock(); el.startBtn.textContent = "暂停测试"; } }
+  });
+  el.canvas.addEventListener("contextmenu", function (e) { e.preventDefault(); });
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && S.phase === "running" && !isLocked()) { pauseTest(); el.startBtn.textContent = "继续测试"; }
+  });
+  window.addEventListener("resize", function () {
+    updateScale();
+    if (!S.raf) draw(performance.now());
+  });
+
+  /* ---------------- 初始化 ---------------- */
+  updateScale();
+  updateLive();
+  draw(performance.now());
+  drawChart(null);
+  idleOverlay();
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>蝶恋花海</title>
+<style>
+  html,body{margin:0;padding:0;width:100%;height:100%;overflow:hidden;background:#04030a;}
+  body{font-family:"Songti SC","STSong","Noto Serif SC","SimSun",serif;}
+  #c{display:block;width:100vw;height:100vh;touch-action:none;cursor:crosshair;}
+  .ui{position:fixed;inset:0;pointer-events:none;}
+  .title{position:absolute;left:0;right:0;top:6vh;text-align:center;
+    font-size:clamp(26px,5.6vw,58px);font-weight:500;letter-spacing:.5em;text-indent:.5em;
+    color:#ffeaf7;opacity:0;
+    text-shadow:0 0 12px rgba(255,150,215,.75),0 0 42px rgba(255,70,170,.5),0 0 110px rgba(210,0,140,.42);
+    animation:appear 4s ease .4s forwards;}
+  .sub{position:absolute;left:0;right:0;top:calc(6vh + clamp(38px,8vw,84px));text-align:center;
+    font-size:clamp(10px,2.3vw,13px);letter-spacing:.5em;text-indent:.5em;color:rgba(255,220,242,.6);
+    opacity:0;text-shadow:0 0 16px rgba(255,80,180,.8);
+    animation:appear 3.4s ease 1.5s forwards;}
+  .hint{position:absolute;left:0;right:0;bottom:3.4vh;text-align:center;
+    font-size:clamp(9px,2.1vw,12px);letter-spacing:.34em;text-indent:.34em;color:rgba(255,210,238,.42);
+    opacity:0;animation:appear 3s ease 2.6s forwards;}
+  @keyframes appear{to{opacity:1}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="ui">
+  <div class="title">蝶恋花海</div>
+  <div class="sub">星空为幕 · 蝶舞花间</div>
+  <div class="hint">移动鼠标引蝶 · 点击星空绽放花海</div>
+</div>
+<script>
+(function(){
+"use strict";
+
+/* ================= 基础工具 ================= */
+var cv = document.getElementById('c');
+var ctx = cv.getContext('2d', { alpha: false });
+var TAU = Math.PI * 2;
+var rnd = function(a, b){ return a + Math.random() * (b - a); };
+var rndi = function(a, b){ return Math.floor(rnd(a, b + 0.999)); };
+var pick = function(arr){ return arr[(Math.random() * arr.length) | 0]; };
+var clamp = function(v, a, b){ return v < a ? a : (v > b ? b : v); };
+var lerp = function(a, b, t){ return a + (b - a) * t; };
+var easeOutBack = function(t){
+  t = clamp(t, 0, 1);
+  var c1 = 1.70158, c3 = c1 + 1;
+  return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+};
+
+var W = 0, H = 0, DPR = 1;
+var skyGrad = null, horizonGrad = null, vignetteGrad = null;
+var time = 0, wind = 0;
+
+/* ================= 预渲染精灵 ================= */
+function offscreen(w, h){
+  var c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  return c;
+}
+
+// 发光粒子（柔光点）
+function makeDot(hue, sat, light, alpha){
+  var s = 48, c = offscreen(s, s), g = c.getContext('2d'), r = s / 2;
+  var grd = g.createRadialGradient(r, r, 0, r, r, r);
+  grd.addColorStop(0.00, 'rgba(255,255,255,' + (0.95 * alpha) + ')');
+  grd.addColorStop(0.18, 'hsla(' + hue + ',' + sat + '%,' + light + '%,' + (0.85 * alpha) + ')');
+  grd.addColorStop(0.48, 'hsla(' + hue + ',' + sat + '%,' + (light - 10) + '%,' + (0.30 * alpha) + ')');
+  grd.addColorStop(0.78, 'hsla(' + hue + ',' + sat + '%,' + (light - 18) + '%,' + (0.08 * alpha) + ')');
+  grd.addColorStop(1.00, 'hsla(' + hue + ',' + sat + '%,60%,0)');
+  g.fillStyle = grd;
+  g.beginPath(); g.arc(r, r, r, 0, TAU); g.fill();
+  return c;
+}
+var DOTS = [
+  makeDot(332, 100, 78, 1),
+  makeDot(312, 100, 74, 0.92),
+  makeDot(348, 96, 82, 0.9),
+  makeDot(292, 92, 78, 0.8),
+  makeDot(20, 55, 94, 0.7)
+];
+
+// 大光晕
+var halo = (function(){
+  var s = 160, c = offscreen(s, s), g = c.getContext('2d'), r = s / 2;
+  var grd = g.createRadialGradient(r, r, 0, r, r, r);
+  grd.addColorStop(0.00, 'rgba(255,255,255,.55)');
+  grd.addColorStop(0.16, 'rgba(255,190,232,.34)');
+  grd.addColorStop(0.42, 'rgba(255,90,190,.14)');
+  grd.addColorStop(0.74, 'rgba(200,40,150,.045)');
+  grd.addColorStop(1.00, 'rgba(160,20,120,0)');
+  g.fillStyle = grd;
+  g.beginPath(); g.arc(r, r, r, 0, TAU); g.fill();
+  return c;
+})();
+
+// 星点（按色温各做一份；flare=true 带十字光芒）
+function makeStar(rgb, flare){
+  var s = 64, c = offscreen(s, s), g = c.getContext('2d'), r = s / 2;
+  var grd = g.createRadialGradient(r, r, 0, r, r, r);
+  grd.addColorStop(0.00, 'rgba(255,255,255,1)');
+  grd.addColorStop(0.12, 'rgba(' + rgb + ',.92)');
+  grd.addColorStop(0.34, 'rgba(' + rgb + ',.30)');
+  grd.addColorStop(0.66, 'rgba(' + rgb + ',.07)');
+  grd.addColorStop(1.00, 'rgba(' + rgb + ',0)');
+  g.fillStyle = grd;
+  g.beginPath(); g.arc(r, r, r, 0, TAU); g.fill();
+  if (flare){
+    var lg = g.createLinearGradient(0, r, s, r);
+    lg.addColorStop(0.00, 'rgba(' + rgb + ',0)');
+    lg.addColorStop(0.50, 'rgba(' + rgb + ',.5)');
+    lg.addColorStop(1.00, 'rgba(' + rgb + ',0)');
+    g.fillStyle = lg;
+    g.fillRect(0, r - 1.2, s, 2.4);
+    var lg2 = g.createLinearGradient(r, 0, r, s);
+    lg2.addColorStop(0.00, 'rgba(' + rgb + ',0)');
+    lg2.addColorStop(0.50, 'rgba(' + rgb + ',.5)');
+    lg2.addColorStop(1.00, 'rgba(' + rgb + ',0)');
+    g.fillStyle = lg2;
+    g.fillRect(r - 1.2, 0, 2.4, s);
+  }
+  return c;
+}
+var TINTS = ['255,255,255', '212,228,255', '255,222,240', '255,238,216', '216,210,255'];
+var STAR_S = TINTS.map(function(t){ return makeStar(t, false); });
+var STAR_B = TINTS.map(function(t){ return makeStar(t, true); });
+
+/* ================= 场景数据 ================= */
+var stars = [], nebula = null, meteors = [];
+var flowers = [], motes = [], butterflies = [], rings = [];
+var pointer = { x: 0, y: 0, sx: 0, sy: 0, nx: 0, ny: 0, active: false };
+var meteorTimer = 3;
+
+/* ---------- 星空 ---------- */
+function buildNebula(){
+  var w = Math.max(360, Math.round(W / 3.2));
+  var h = Math.max(240, Math.round(H / 3.2));
+  nebula = offscreen(w, h);
+  var g = nebula.getContext('2d');
+  g.globalCompositeOperation = 'lighter';
+  var bands = [
+    { hue: 296, sat: 85, a: 0.13 },
+    { hue: 268, sat: 78, a: 0.11 },
+    { hue: 328, sat: 92, a: 0.12 },
+    { hue: 244, sat: 75, a: 0.09 },
+    { hue: 312, sat: 88, a: 0.10 },
+    { hue: 342, sat: 90, a: 0.09 }
+  ];
+  for (var i = 0; i < bands.length; i++){
+    var b = bands[i];
+    var t = (i + 0.5) / bands.length;
+    var bx = lerp(-0.15, 1.15, t) * w;
+    var by = lerp(0.05, 0.85, t) * h;
+    var br = rnd(0.16, 0.34) * w;
+    var grd = g.createRadialGradient(bx, by, 0, bx, by, br);
+    grd.addColorStop(0.00, 'hsla(' + b.hue + ',' + b.sat + '%,62%,' + b.a + ')');
+    grd.addColorStop(0.45, 'hsla(' + b.hue + ',' + b.sat + '%,52%,' + (b.a * 0.4) + ')');
+    grd.addColorStop(1.00, 'hsla(' + b.hue + ',' + b.sat + '%,45%,0)');
+    g.fillStyle = grd;
+    g.beginPath(); g.arc(bx, by, br, 0, TAU); g.fill();
+  }
+}
+
+function buildStars(){
+  stars.length = 0;
+  var n = Math.round(clamp(W * H / 1750, 320, 1100));
+  for (var i = 0; i < n; i++){
+    var inBand = Math.random() < 0.34;
+    var x, y;
+    if (inBand){
+      var t = rnd(-0.12, 1.12);
+      x = t * W;
+      y = (0.20 + t * 0.58) * H + (Math.random() + Math.random() + Math.random() - 1.5) * H * 0.16;
+    } else {
+      x = rnd(-20, W + 20);
+      y = rnd(-20, H * 0.95);
+    }
+    var depth = rnd(0.18, 1);
+    var big = Math.random() < 0.028;
+    var ti = (Math.random() * TINTS.length) | 0;
+    stars.push({
+      x: x, y: y,
+      r: big ? rnd(7, 13) : rnd(1.3, 3.1) * depth,
+      base: big ? rnd(0.5, 0.9) : rnd(0.16, 0.62) * lerp(0.55, 1, depth),
+      tw: rnd(0.5, 2.3),
+      ph: rnd(0, TAU),
+      big: big,
+      tint: ti,
+      par: depth * 0.9
+    });
+  }
+}
+
+function spawnMeteor(){
+  var dir = rnd(0.22, 0.52) * Math.PI;
+  var sp = rnd(560, 1150);
+  meteors.push({
+    x: rnd(-0.1, 0.85) * W,
+    y: rnd(-0.05, 0.55) * H,
+    vx: Math.cos(dir) * sp,
+    vy: Math.sin(dir) * sp,
+    len: rnd(140, 360),
+    life: 1,
+    fade: rnd(0.5, 1.1)
+  });
+}
+
+/* ---------- 粒子花海 ---------- */
+function makeParticleFlower(x, y, R, depth, grow){
+  var petals = rndi(5, 7);
+  var k = petals / 2;
+  var count = Math.round(clamp(20 + R * 1.45, 22, 92));
+  var parts = [];
+  for (var i = 0; i < count; i++){
+    var a = rnd(0, TAU);
+    var rr;
+    if (Math.random() < 0.30){
+      rr = R * 0.30 * Math.sqrt(Math.random());
+    } else {
+      var rmax = 0.42 + 0.58 * Math.pow(Math.abs(Math.cos(k * a)), 0.55);
+      rr = R * rmax * Math.sqrt(Math.random()) * 0.99;
+    }
+    var jitter = R * 0.06;
+    parts.push({
+      ax: Math.cos(a) * rr + rnd(-jitter, jitter),
+      ay: Math.sin(a) * rr * 0.92 + rnd(-jitter, jitter),
+      size: rnd(1.1, 2.9) * (0.6 + depth * 0.8),
+      dot: Math.random() < 0.16 ? DOTS[4] : pick([DOTS[0], DOTS[1], DOTS[2], DOTS[3]]),
+      base: rnd(0.28, 0.85),
+      tw: rnd(0.6, 2.4),
+      ph: rnd(0, TAU),
+      rise: rnd(0, 1),
+      rate: rnd(5, 15) * (0.7 + depth * 0.7),
+      range: R * rnd(0.7, 1.25) + 12
+    });
+  }
+  var f = {
+    x: x, y: y, R: R, parts: parts, petals: petals,
+    depth: depth,
+    swayPhase: rnd(0, TAU),
+    swaySpeed: rnd(0.35, 0.9),
+    swayAmp: lerp(1.2, 6, depth) * rnd(0.7, 1.3),
+    alpha: lerp(0.55, 1, depth),
+    haloA: lerp(0.06, 0.17, depth),
+    sx: 0,
+    grow: grow === undefined ? 1 : grow,
+    back: depth < 0.55
+  };
+  flowers.push(f);
+  return f;
+}
+
+function buildFlowers(){
+  flowers.length = 0;
+  var areaScale = clamp((W * H) / (1440 * 900), 0.5, 1.5);
+  var n = Math.round(78 * areaScale);
+  for (var i = 0; i < n; i++){
+    var y = rnd(H * 0.50, H * 1.03);
+    var depth = clamp((y - H * 0.46) / (H * 0.58), 0, 1);
+    var x = rnd(-40, W + 40);
+    if (Math.random() < 0.55){
+      x = (Math.round(rnd(0, 5)) / 5) * (W + 80) - 40 + rnd(-60, 60);
+    }
+    var R = lerp(11, 54, Math.pow(depth, 1.45)) * rnd(0.8, 1.2);
+    makeParticleFlower(x, y, R, depth, 1);
+  }
+}
+
+function bloom(x, y){
+  if (flowers.length > 150) flowers.shift();
+  var depth = clamp((y - H * 0.46) / (H * 0.58), 0.25, 1);
+  makeParticleFlower(x, y, lerp(16, 50, depth) * rnd(0.85, 1.15), depth, 0);
+  for (var i = 0; i < 26; i++){
+    var a = rnd(0, TAU), sp = rnd(30, 130);
+    motes.push({
+      x: x + Math.cos(a) * rnd(0, 24),
+      y: y + Math.sin(a) * rnd(0, 24),
+      vx: Math.cos(a) * sp,
+      vy: Math.sin(a) * sp * 0.6 - rnd(20, 70),
+      r: rnd(1.6, 4.2),
+      dot: pick(DOTS),
+      a: rnd(0.5, 0.95),
+      ph: rnd(0, TAU),
+      burst: true,
+      life: 1,
+      speed: 0
+    });
+  }
+  rings.push({ x: x, y: y, r: 10, life: 1 });
+}
+
+function buildMotes(){
+  motes.length = 0;
+  var areaScale = clamp((W * H) / (1440 * 900), 0.5, 1.6);
+  var n = Math.round(170 * areaScale);
+  for (var i = 0; i < n; i++){
+    motes.push({
+      x: rnd(-30, W + 30),
+      y: rnd(-H * 0.2, H),
+      vx: 0,
+      vy: 0,
+      r: rnd(1.1, 3.4),
+      dot: pick(DOTS),
+      a: rnd(0.18, 0.7),
+      ph: rnd(0, TAU),
+      burst: false,
+      life: 1,
+      speed: rnd(6, 26)
+    });
+  }
+}
+
+/* ---------- 蝴蝶 ---------- */
+function makeButterfly(){
+  var size = rnd(9, 16.5);
+  var cruise = rnd(26, 54) * (size / 12);
+  return {
+    x: rnd(0, W),
+    y: rnd(H * 0.12, H * 0.9),
+    angle: rnd(0, TAU),
+    baseAngle: rnd(0, TAU),
+    speed: cruise,
+    cruise: cruise,
+    maxSpeed: cruise * 2.6,
+    size: size,
+    hue: rnd(300, 348),
+    alpha: rnd(0.82, 1),
+    flapPhase: rnd(0, TAU),
+    omega: rnd(15, 23) * (12 / size) * 1.5,
+    amp: rnd(0.7, 1.05),
+    gliding: false,
+    glideTimer: rnd(0.4, 2.4),
+    wanderPhase: rnd(0, TAU),
+    wanderRate: rnd(0.2, 0.55),
+    seed: rnd(0, TAU),
+    orbit: rnd(45, 140),
+    bobOffset: 0
+  };
+}
+
+function buildButterflies(){
+  butterflies.length = 0;
+  var n = Math.round(clamp(W / 150, 6, 15));
+  for (var i = 0; i < n; i++) butterflies.push(makeButterfly());
+}
+
+/* ---------- 场景重建 ---------- */
+function buildScene(){
+  buildNebula();
+  buildStars();
+  buildFlowers();
+  buildMotes();
+  buildButterflies();
+  meteors.length = 0;
+  rings.length = 0;
+  meteorTimer = rnd(2, 6);
+}
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth;
+  H = window.innerHeight;
+  cv.width = Math.round(W * DPR);
+  cv.height = Math.round(H * DPR);
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+  skyGrad = ctx.createLinearGradient(0, 0, 0, H);
+  skyGrad.addColorStop(0.00, '#03020a');
+  skyGrad.addColorStop(0.34, '#060514');
+  skyGrad.addColorStop(0.62, '#0a0720');
+  skyGrad.addColorStop(0.84, '#130a2a');
+  skyGrad.addColorStop(1.00, '#1d0a2c');
+
+  horizonGrad = ctx.createLinearGradient(0, H * 0.46, 0, H);
+  horizonGrad.addColorStop(0.00, 'rgba(255,60,160,0)');
+  horizonGrad.addColorStop(0.45, 'rgba(255,70,170,.055)');
+  horizonGrad.addColorStop(1.00, 'rgba(255,110,200,.16)');
+
+  var vg = ctx.createRadialGradient(W * 0.5, H * 0.58, Math.min(W, H) * 0.2,
+                                    W * 0.5, H * 0.6, Math.max(W, H) * 0.8);
+  vg.addColorStop(0.00, 'rgba(0,0,0,0)');
+  vg.addColorStop(0.58, 'rgba(4,0,10,.18)');
+  vg.addColorStop(1.00, 'rgba(2,0,6,.72)');
+  vignetteGrad = vg;
+
+  buildScene();
+  if (!pointer.active){
+    pointer.x = pointer.sx = W * 0.5;
+    pointer.y = pointer.sy = H * 0.5;
+  }
+}
+
+/* ================= 更新 ================= */
+function updateStars(dt){
+  meteorTimer -= dt;
+  if (meteorTimer <= 0){
+    spawnMeteor();
+    meteorTimer = rnd(6, 17);
+  }
+  for (var i = meteors.length - 1; i >= 0; i--){
+    var m = meteors[i];
+    m.x += m.vx * dt;
+    m.y += m.vy * dt;
+    m.life -= dt * m.fade;
+    if (m.life <= 0 || m.x > W * 1.4 || m.y > H * 1.3) meteors.splice(i, 1);
+  }
+}
+
+function updateFlowers(dt){
+  for (var i = 0; i < flowers.length; i++){
+    var f = flowers[i];
+    if (f.grow < 1) f.grow = Math.min(1, f.grow + dt / 1.5);
+    f.sx = Math.sin(time * f.swaySpeed + f.swayPhase) * f.swayAmp + wind * f.swayAmp * 1.4;
+    var ps = f.parts;
+    for (var j = 0; j < ps.length; j++){
+      var p = ps[j];
+      p.rise += p.rate * dt;
+      if (p.rise > p.range) p.rise -= p.range;
+    }
+  }
+}
+
+function updateMotes(dt){
+  for (var i = motes.length - 1; i >= 0; i--){
+    var m = motes[i];
+    if (m.burst){
+      m.x += m.vx * dt;
+      m.y += m.vy * dt;
+      m.vx *= (1 - 1.1 * dt);
+      m.vy += 26 * dt;
+      m.life -= dt * 1.05;
+      if (m.life <= 0){ motes.splice(i, 1); continue; }
+    } else {
+      m.y -= m.speed * dt;
+      m.x += Math.sin(time * 0.6 + m.ph) * 7 * dt + wind * 14 * dt;
+      if (m.y < -30){
+        m.y = H + rnd(10, 90);
+        m.x = rnd(-30, W + 30);
+        m.speed = rnd(6, 26);
+      }
+    }
+  }
+  for (var r = rings.length - 1; r >= 0; r--){
+    rings[r].r += dt * 360;
+    rings[r].life -= dt * 1.1;
+    if (rings[r].life <= 0) rings.splice(r, 1);
+  }
+}
+
+function updateButterflies(dt){
+  for (var i = 0; i < butterflies.length; i++){
+    var b = butterflies[i];
+    b.wanderPhase += dt * b.wanderRate;
+
+    var desired = b.baseAngle
+      + Math.sin(b.wanderPhase * 0.75) * 0.85
+      + Math.sin(b.wanderPhase * 2.4 + b.seed) * 0.22;
+
+    var excited = false;
+    if (pointer.active){
+      var dx = pointer.sx - b.x, dy = pointer.sy - b.y;
+      var d = Math.sqrt(dx * dx + dy * dy) + 0.001;
+      if (d < 430){
+        var tx = pointer.sx - (dx / d) * b.orbit;
+        var ty = pointer.sy - (dy / d) * b.orbit;
+        desired = Math.atan2(ty - b.y, tx - b.x);
+        excited = true;
+      }
+    }
+
+    var diff = desired - b.angle;
+    while (diff > Math.PI) diff -= TAU;
+    while (diff < -Math.PI) diff += TAU;
+    b.angle += clamp(diff * dt * 3.2, -2.6 * dt, 2.6 * dt);
+
+    var target = excited
+      ? b.maxSpeed * rnd(0.92, 1.0)
+      : b.cruise * (0.85 + 0.3 * (0.5 + 0.5 * Math.sin(time * 1.4 + b.seed)));
+    b.speed = lerp(b.speed, target, 1 - Math.pow(0.12, dt));
+
+    b.x += Math.cos(b.angle) * b.speed * dt;
+    b.y += Math.sin(b.angle) * b.speed * dt;
+
+    b.glideTimer -= dt;
+    if (b.glideTimer <= 0){
+      b.gliding = Math.random() < 0.34;
+      b.glideTimer = rnd(0.7, 2.6);
+    }
+    var targetAmp = b.gliding ? 0.16 : 1.05;
+    b.amp = lerp(b.amp, targetAmp, 1 - Math.pow(0.02, dt));
+    b.flapPhase += dt * b.omega * (b.gliding ? 0.5 : (excited ? 1.3 : 1));
+    b.bobOffset = -Math.sin(b.flapPhase) * b.size * 0.20
+                + Math.sin(time * 0.9 + b.seed) * (1.5 + b.size * 0.06);
+
+    var m = 110;
+    if (b.x < -m) b.x = W + m;
+    if (b.x > W + m) b.x = -m;
+    if (b.y < -m) b.y = H + m;
+    if (b.y > H + m) b.y = -m;
+
+    if (Math.random() < dt * 0.3) b.baseAngle = rnd(0, TAU);
+  }
+}
+
+/* ================= 绘制：星空 ================= */
+function drawSky(){
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = skyGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  var px = pointer.nx * 16, py = pointer.ny * 9;
+
+  // 星云
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.9;
+  var drift = Math.sin(time * 0.03) * 14;
+  ctx.save();
+  ctx.translate(px * 0.4 + drift * 0.4, py * 0.4 + Math.cos(time * 0.026) * 10);
+  ctx.drawImage(nebula, -18, -18, W + 36, H + 36);
+  ctx.restore();
+
+  // 星星
+  for (var i = 0; i < stars.length; i++){
+    var s = stars[i];
+    var twk = 0.55 + 0.45 * Math.sin(time * s.tw + s.ph);
+    var a = s.base * twk;
+    if (a <= 0.02) continue;
+    var sz = s.r * (s.big ? 1.6 : 1.15);
+    ctx.globalAlpha = a;
+    ctx.drawImage(s.big ? STAR_B[s.tint] : STAR_S[s.tint],
+      s.x + px * s.par - sz, s.y + py * s.par - sz, sz * 2, sz * 2);
+  }
+
+  // 流星
+  for (var k = 0; k < meteors.length; k++){
+    var mt = meteors[k];
+    var a2 = clamp(mt.life, 0, 1) * 0.9;
+    var nx = mt.vx, ny = mt.vy;
+    var nl = Math.sqrt(nx * nx + ny * ny) || 1;
+    nx /= nl; ny /= nl;
+    var tx = mt.x - nx * mt.len, ty = mt.y - ny * mt.len;
+    var lg = ctx.createLinearGradient(mt.x, mt.y, tx, ty);
+    lg.addColorStop(0.00, 'rgba(255,236,250,' + a2 + ')');
+    lg.addColorStop(0.25, 'rgba(255,170,225,' + (a2 * 0.45) + ')');
+    lg.addColorStop(1.00, 'rgba(255,120,200,0)');
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = lg;
+    ctx.lineWidth = 1.6;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(mt.x, mt.y);
+    ctx.lineTo(tx, ty);
+    ctx.stroke();
+    var hs = 9 * clamp(mt.life, 0, 1) + 3;
+    ctx.globalAlpha = a2;
+    ctx.drawImage(STAR_B[0], mt.x - hs, mt.y - hs, hs * 2, hs * 2);
+  }
+
+  // 花海映亮的天际
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = horizonGrad;
+  ctx.fillRect(0, H * 0.4, W, H * 0.6);
+}
+
+/* ================= 绘制：粒子花海 ================= */
+function drawFlowers(list){
+  ctx.globalCompositeOperation = 'lighter';
+  for (var i = 0; i < list.length; i++){
+    var f = list[i];
+    var gr = easeOutBack(f.grow);
+    if (gr <= 0.01) continue;
+    var R = f.R * gr;
+    var fx = f.x + f.sx;
+
+    var hs = R * 1.9;
+    ctx.globalAlpha = clamp(f.haloA * gr * (0.8 + 0.2 * Math.sin(time * 0.7 + f.swayPhase)), 0, 1);
+    ctx.drawImage(halo, fx - hs, f.y - hs, hs * 2, hs * 2);
+
+    var ps = f.parts;
+    var step = perf >= 2 ? 3 : (perf >= 1 ? 2 : 1);
+    for (var j = 0; j < ps.length; j += step){
+      var p = ps[j];
+      var u = p.rise / p.range;
+      var fade = u < 0.42 ? 1 : Math.pow(1 - (u - 0.42) / 0.58, 1.35);
+      var a = p.base * fade * (0.62 + 0.38 * Math.sin(time * p.tw + p.ph)) * f.alpha * gr;
+      if (a <= 0.015) continue;
+      var x = fx + p.ax * gr + p.rise * 0.16 * wind;
+      var y = f.y + p.ay * gr - p.rise;
+      var sz = p.size * (0.75 + gr * 0.45);
+      ctx.globalAlpha = clamp(a, 0, 1);
+      ctx.drawImage(p.dot, x - sz, y - sz, sz * 2, sz * 2);
+    }
+  }
+}
+
+function drawMotes(){
+  ctx.globalCompositeOperation = 'lighter';
+  var step = perf >= 2 ? 2 : 1;
+  for (var i = 0; i < motes.length; i += step){
+    var m = motes[i];
+    var a = m.a * (m.burst ? clamp(m.life, 0, 1) : 0.55 + 0.45 * Math.sin(time * 0.8 + m.ph));
+    if (a <= 0.02) continue;
+    var sz = m.r * (0.85 + 0.15 * Math.sin(time * 1.6 + m.ph));
+    ctx.globalAlpha = clamp(a, 0, 1);
+    ctx.drawImage(m.dot, m.x - sz, m.y - sz, sz * 2, sz * 2);
+  }
+}
+
+/* ================= 绘制：蝴蝶 ================= */
+var FORE_VEINS = [[0.66, 1.02], [0.54, 0.96], [0.40, 0.86], [0.28, 0.66], [0.20, 0.40]];
+var HIND_VEINS = [[-0.26, 0.86], [-0.44, 0.84], [-0.60, 0.74], [-0.70, 0.56], [-0.54, 0.22]];
+var FORE_SPOTS = [[0.62, 1.04], [0.48, 0.95], [0.34, 0.85], [0.24, 0.70], [0.19, 0.52]];
+var HIND_SPOTS = [[-0.30, 0.83], [-0.48, 0.80], [-0.63, 0.70], [-0.72, 0.50]];
+
+// 前翅：翅根 → 翅尖前伸，外缘圆润，后缘贴身体
+function foreWingPath(g){
+  g.beginPath();
+  g.moveTo(0.14, 0.04);
+  g.bezierCurveTo(0.30, 0.30, 0.54, 0.76, 0.74, 1.12);
+  g.bezierCurveTo(0.82, 1.20, 0.46, 1.02, 0.28, 0.88);
+  g.bezierCurveTo(0.22, 0.62, 0.17, 0.22, 0.14, 0.04);
+  g.closePath();
+}
+// 后翅：向后外侧铺开，外缘浑圆
+function hindWingPath(g){
+  g.beginPath();
+  g.moveTo(0.10, 0.04);
+  g.bezierCurveTo(0.02, 0.34, -0.06, 0.62, -0.16, 0.86);
+  g.bezierCurveTo(-0.34, 1.00, -0.68, 0.90, -0.82, 0.58);
+  g.bezierCurveTo(-0.92, 0.28, -0.60, 0.06, -0.34, 0.03);
+  g.bezierCurveTo(-0.22, 0.01, -0.02, 0.01, 0.10, 0.04);
+  g.closePath();
+}
+function wingFill(g, hue, fl){
+  var grd = g.createLinearGradient(-0.80, -0.1, 0.60, 1.15);
+  grd.addColorStop(0.00, 'hsla(' + (hue - 24) + ',88%,46%,.90)');
+  grd.addColorStop(0.35, 'hsla(' + (hue - 6) + ',96%,66%,.94)');
+  grd.addColorStop(0.72, 'hsla(' + (hue + 6) + ',100%,84%,.96)');
+  grd.addColorStop(1.00, 'hsla(' + (hue + 16) + ',100%,94%,' + (0.86 + 0.14 * fl).toFixed(3) + ')');
+  return grd;
+}
+
+function drawButterfly(b){
+  var size = b.size;
+  var ang = b.amp * Math.sin(b.flapPhase);
+  var fl = Math.max(0.13, Math.abs(Math.cos(ang)));
+  var skew = -0.20 * Math.cos(b.flapPhase) * (0.4 + 0.6 * (1 - fl));
+  var hue = b.hue;
+
+  ctx.globalCompositeOperation = 'lighter';
+  var gs = size * (2.4 + 1.6 * (1 - fl));
+  ctx.globalAlpha = 0.24 * b.alpha * (0.6 + 0.4 * fl);
+  ctx.drawImage(halo, b.x - gs, b.y + b.bobOffset - gs, gs * 2, gs * 2);
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.save();
+  ctx.translate(b.x, b.y + b.bobOffset);
+  ctx.rotate(b.angle);
+  ctx.scale(size, size);
+  ctx.globalAlpha = b.alpha;
+
+  for (var s = 0; s < 2; s++){
+    var side = s === 0 ? 1 : -1;
+    ctx.save();
+    ctx.scale(1, side * fl);
+    ctx.transform(1, 0, skew, 1, 0, 0);
+
+    // 前翅
+    foreWingPath(ctx);
+    ctx.fillStyle = wingFill(ctx, hue, fl);
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.strokeStyle = 'hsla(' + (hue + 26) + ',100%,90%,' + (0.20 + 0.22 * (1 - fl)).toFixed(3) + ')';
+    ctx.lineWidth = 0.022;
+    for (var v = 0; v < FORE_VEINS.length; v++){
+      var t = FORE_VEINS[v];
+      ctx.beginPath();
+      ctx.moveTo(0.12, 0.05);
+      ctx.quadraticCurveTo(0.14 + t[0] * 0.42, 0.05 + t[1] * 0.52, t[0], t[1]);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'hsla(' + (hue - 26) + ',72%,16%,.75)';
+    ctx.lineWidth = 0.15;
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = 'hsla(' + (hue + 20) + ',100%,95%,' + (0.55 + 0.3 * (1 - fl)).toFixed(3) + ')';
+    for (var sp = 0; sp < FORE_SPOTS.length; sp++){
+      ctx.beginPath();
+      ctx.arc(FORE_SPOTS[sp][0], FORE_SPOTS[sp][1], 0.042, 0, TAU);
+      ctx.fill();
+    }
+    ctx.strokeStyle = 'hsla(' + (hue + 30) + ',100%,95%,' + (0.22 + 0.35 * (1 - fl)).toFixed(3) + ')';
+    ctx.lineWidth = 0.026;
+    ctx.beginPath();
+    ctx.moveTo(0.14, 0.04);
+    ctx.bezierCurveTo(0.30, 0.30, 0.54, 0.76, 0.74, 1.12);
+    ctx.stroke();
+
+    // 后翅
+    hindWingPath(ctx);
+    ctx.fillStyle = wingFill(ctx, hue - 4, fl);
+    ctx.fill();
+    ctx.save();
+    ctx.clip();
+    ctx.strokeStyle = 'hsla(' + (hue + 24) + ',100%,88%,' + (0.18 + 0.2 * (1 - fl)).toFixed(3) + ')';
+    ctx.lineWidth = 0.02;
+    for (var v2 = 0; v2 < HIND_VEINS.length; v2++){
+      var t2 = HIND_VEINS[v2];
+      ctx.beginPath();
+      ctx.moveTo(0.08, 0.05);
+      ctx.quadraticCurveTo(t2[0] * 0.5, 0.05 + t2[1] * 0.55, t2[0], t2[1]);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'hsla(' + (hue - 26) + ',72%,16%,.72)';
+    ctx.lineWidth = 0.13;
+    ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = 'hsla(' + (hue + 20) + ',100%,95%,' + (0.5 + 0.3 * (1 - fl)).toFixed(3) + ')';
+    for (var sp2 = 0; sp2 < HIND_SPOTS.length; sp2++){
+      ctx.beginPath();
+      ctx.arc(HIND_SPOTS[sp2][0], HIND_SPOTS[sp2][1], 0.038, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  // 身体
+  ctx.globalCompositeOperation = 'source-over';
+  var bg = ctx.createLinearGradient(-0.7, 0, 0.5, 0);
+  bg.addColorStop(0.00, 'hsla(' + (hue - 22) + ',80%,34%,.98)');
+  bg.addColorStop(0.55, 'hsla(' + (hue - 6) + ',90%,58%,.98)');
+  bg.addColorStop(1.00, 'hsla(' + (hue + 16) + ',100%,86%,.98)');
+  ctx.fillStyle = bg;
+  ctx.beginPath();
+  ctx.moveTo(0.20, -0.058);
+  ctx.bezierCurveTo(-0.06, -0.108, -0.36, -0.082, -0.62, -0.012);
+  ctx.bezierCurveTo(-0.36, 0.058, -0.06, 0.108, 0.20, 0.058);
+  ctx.closePath();
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(0.30, 0, 0.20, 0.115, 0, 0, TAU);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(0.55, 0, 0.095, 0, TAU);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(255,240,250,.5)';
+  ctx.lineWidth = 0.02;
+  ctx.beginPath();
+  ctx.moveTo(0.34, -0.06);
+  ctx.quadraticCurveTo(0.10, -0.07, -0.30, -0.03);
+  ctx.stroke();
+  // 触角（球端）
+  ctx.strokeStyle = 'hsla(' + (hue + 10) + ',100%,88%,.8)';
+  ctx.lineWidth = 0.024;
+  for (var an = 0; an < 2; an++){
+    var sgn = an === 0 ? 1 : -1;
+    ctx.beginPath();
+    ctx.moveTo(0.58, 0.03 * sgn);
+    ctx.quadraticCurveTo(0.86, 0.15 * sgn, 1.06, 0.30 * sgn);
+    ctx.stroke();
+    ctx.fillStyle = 'hsla(' + (hue + 20) + ',100%,92%,.9)';
+    ctx.beginPath();
+    ctx.arc(1.08, 0.31 * sgn, 0.045, 0, TAU);
+    ctx.fill();
+  }
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+/* ================= 渲染主流程 ================= */
+var backList = [], frontList = [];
+
+function render(){
+  drawSky();
+
+  backList.length = 0; frontList.length = 0;
+  for (var i = 0; i < flowers.length; i++){
+    (flowers[i].back ? backList : frontList).push(flowers[i]);
+  }
+
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 1;
+  drawFlowers(backList);
+
+  for (var b = 0; b < butterflies.length; b++) drawButterfly(butterflies[b]);
+
+  drawFlowers(frontList);
+  drawMotes();
+
+  ctx.globalCompositeOperation = 'lighter';
+  for (var r = 0; r < rings.length; r++){
+    var rg = rings[r];
+    ctx.globalAlpha = clamp(rg.life, 0, 1) * 0.45;
+    ctx.strokeStyle = 'rgba(255,170,225,.9)';
+    ctx.lineWidth = 1.5 + 7 * (1 - rg.life);
+    ctx.beginPath();
+    ctx.ellipse(rg.x, rg.y, rg.r, rg.r * 0.42, 0, 0, TAU);
+    ctx.stroke();
+  }
+
+  if (pointer.active){
+    var ms = 130;
+    ctx.globalAlpha = 0.13;
+    ctx.drawImage(halo, pointer.sx - ms, pointer.sy - ms, ms * 2, ms * 2);
+  }
+
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = vignetteGrad;
+  ctx.fillRect(0, 0, W, H);
+}
+
+/* ================= 主循环 ================= */
+var last = 0, ema = 16, perf = 0, perfTick = 0;
+
+function frame(now){
+  if (!last) last = now;
+  var dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  time += dt;
+  wind = Math.sin(time * 0.21) * 0.5 + Math.sin(time * 0.57 + 1.1) * 0.24;
+
+  ema = ema * 0.92 + (dt * 1000) * 0.08;
+  if (++perfTick > 90){
+    perfTick = 0;
+    if (ema > 26 && perf < 2) perf++;
+    else if (ema < 17.5 && perf > 0) perf--;
+  }
+
+  pointer.sx = lerp(pointer.sx, pointer.x, 1 - Math.pow(0.002, dt));
+  pointer.sy = lerp(pointer.sy, pointer.y, 1 - Math.pow(0.002, dt));
+
+  updateStars(dt);
+  updateFlowers(dt);
+  updateButterflies(dt);
+  updateMotes(dt);
+  render();
+  requestAnimationFrame(frame);
+}
+
+/* ================= 交互 ================= */
+function setPointer(e){
+  pointer.x = e.clientX;
+  pointer.y = e.clientY;
+  if (!pointer.active){
+    pointer.sx = pointer.x;
+    pointer.sy = pointer.y;
+    pointer.active = true;
+  }
+  pointer.nx = (e.clientX / W - 0.5) * 2;
+  pointer.ny = (e.clientY / H - 0.5) * 2;
+}
+
+window.addEventListener('pointermove', setPointer, { passive: true });
+window.addEventListener('pointerdown', function(e){
+  setPointer(e);
+  bloom(e.clientX, e.clientY);
+}, { passive: true });
+window.addEventListener('pointerleave', function(){ pointer.active = false; }, { passive: true });
+document.addEventListener('visibilitychange', function(){ if (document.hidden) last = 0; });
+
+var rt = 0;
+window.addEventListener('resize', function(){
+  clearTimeout(rt);
+  rt = setTimeout(resize, 180);
+});
+
+resize();
+requestAnimationFrame(frame);
+
+})();
+</script>
+</body>
+</html>
